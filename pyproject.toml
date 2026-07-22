@@ -1,0 +1,11 @@
+[project]
+name = "tlaw"
+license = "MIT"
+license-files = ["LICENSE"]
+version = "0.0.1"
+requires-python = ">=3.12"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.11.28,<0.12.0"]
+build-backend = "uv_build"
