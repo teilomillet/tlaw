@@ -1,7 +1,8 @@
-"""Declare visible input domains for executable behavioral laws."""
+"""Declare visible domains and comparisons for executable behavioral laws."""
 
 from __future__ import annotations
 
+from .comparison import Comparison, same
 from .domains import (
     DependentDomain,
     Domain,
@@ -14,6 +15,7 @@ from .domains import (
 
 
 __all__ = [
+    "Comparison",
     "DependentDomain",
     "Domain",
     "depends",
@@ -21,4 +23,5 @@ __all__ = [
     "list_of",
     "number",
     "one_of",
+    "same",
 ]
