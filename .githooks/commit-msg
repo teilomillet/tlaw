@@ -1,0 +1,66 @@
+#!/bin/sh
+# Keep commit titles and changelog decisions predictable for humans, Zed,
+# and other agents. Every ordinary commit must either stage a user-facing
+# change fragment or explicitly say that no changelog entry is needed.
+set -eu
+
+message_file=$1
+subject=$(sed -n '1p' "$message_file")
+
+# Preserve Git's own merge and revert messages.
+case "$subject" in
+    "Merge "*|"Revert \""*)
+        exit 0
+        ;;
+esac
+
+if [ "${#subject}" -gt 72 ]; then
+    echo "commit title is ${#subject} characters; the limit is 72" >&2
+    exit 1
+fi
+
+pattern='^(feat|fix|docs|refactor|test|perf|build|ci|chore|revert)(\([a-z0-9][a-z0-9._/-]*\))?!?: [^[:space:]].+$'
+if ! printf '%s\n' "$subject" | grep -Eq "$pattern"; then
+    cat >&2 <<'EOF'
+commit title must use:
+
+  type(scope): imperative summary
+
+scope is optional. Allowed types: feat, fix, docs, refactor, test,
+perf, build, ci, chore, and revert. See CONTRIBUTING.md.
+EOF
+    exit 1
+fi
+
+# A release consumes its fragments, so the generated changelog replaces the
+# ordinary fragment requirement for this one documented commit shape.
+if printf '%s\n' "$subject" | grep -Eq '^chore\(release\)!?: ' \
+    && git diff --cached --name-only -- CHANGELOG.md \
+        | grep -qx 'CHANGELOG.md'; then
+    exit 0
+fi
+
+fragments=$(git diff --cached --name-only --diff-filter=AM -- changes \
+    | grep -Ev '^changes/README\.md$' || true)
+if [ -n "$fragments" ]; then
+    exit 0
+fi
+
+if grep -Eq '^Changelog: skip$' "$message_file"; then
+    exit 0
+fi
+
+cat >&2 <<'EOF'
+commit has no staged change fragment and no explicit skip decision
+
+For a user-visible change, stage:
+
+  changes/+short-name.<category>.md
+
+For an internal-only change, add this exact footer after a blank line:
+
+  Changelog: skip
+
+See CONTRIBUTING.md.
+EOF
+exit 1

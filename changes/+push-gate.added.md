@@ -1,0 +1,1 @@
+Add `scripts/gate`, run by both the `.githooks/pre-push` hook and CI so they share one command list; it verifies the dependency lock, runs ruff and the property suite, and uses `tlaw check` plus `tlaw mutate` on the flat examples.

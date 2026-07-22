@@ -1,0 +1,5 @@
+{
+  "agent": {
+    "commit_message_instructions": "Read AGENTS.md and inspect only the staged diff. Use `type(scope): imperative summary`; scope is optional, the first line must be at most 72 characters, and the allowed types are feat, fix, docs, refactor, test, perf, build, ci, chore, and revert. For a user-visible change, verify that a matching `changes/+short-name.<category>.md` file is staged. If it is missing, return exactly `BLOCKED: add the required changelog fragment before committing` instead of a commit message. For an internal-only code change without a fragment, include a blank line and the footer `Changelog: skip`. Never claim that a fragment exists unless it is present in the staged diff."
+  }
+}

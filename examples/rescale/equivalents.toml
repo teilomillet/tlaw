@@ -1,0 +1,11 @@
+version = 1
+
+# Flipping the compensation's sign changes the Kahan result only at the
+# ~1e-15 relative level — below the declared 1e-9 tolerance. The law
+# compares against the naive sum to relative 1e-9, and the compensation
+# term lives beneath that floor, so no input in the domain can tell the
+# two apart. Killing it would require comparing against an exactly-rounded
+# reference (math.fsum) at a tolerance near machine epsilon, which is a
+# different, tighter law than "the refactor preserved results to 1e-9".
+[equivalent.e77faa4243e4]
+reason = "sign-flipped compensation differs only below the declared 1e-9 tolerance"

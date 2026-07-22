@@ -1,0 +1,14 @@
+# type(scope): imperative summary
+#
+# First line: 72 characters or fewer.
+# Types: feat, fix, docs, refactor, test, perf, build, ci, chore, revert.
+#
+# User-visible change:
+#   Stage one changes/+short-name.<category>.md fragment.
+#
+# Internal-only change:
+#   Add this footer after the body:
+#
+#   Changelog: skip
+#
+# CHANGELOG.md is generated only when preparing a release.

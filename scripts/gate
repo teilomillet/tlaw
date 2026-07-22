@@ -1,0 +1,37 @@
+#!/bin/sh
+# The push gate: everything that must hold before main moves.
+#
+# One visible script, two callers — .githooks/pre-push runs it on this
+# machine before every push, and .github/workflows/ci.yml runs the same
+# commands on every push and pull request. Local and remote enforcement
+# share one command list because they call the same file.
+#
+# What it enforces, in order of cheapest failure first:
+#   1. the committed dependency lock still matches pyproject.toml;
+#   2. pending changelog fragments are valid and renderable;
+#   3. ruff lint and formatting;
+#   4. the full property suite;
+#   5. the flat example laws still pass; and
+#   6. the flat examples still kill their generated mutants — the repo
+#      dogfoods its own strength meter on every push.
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+
+uv lock --check
+uv run towncrier build --draft >/dev/null
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest -q
+uv run tlaw check examples/batch_packer/laws.py
+uv run tlaw check examples/score_weights/laws.py
+uv run tlaw check examples/rescale/laws.py
+uv run tlaw mutate examples/batch_packer/laws.py \
+    examples/batch_packer/implementation.py
+uv run tlaw mutate examples/score_weights/laws.py \
+    examples/score_weights/implementation.py \
+    --equivalents examples/score_weights/equivalents.toml
+uv run tlaw mutate examples/rescale/laws.py \
+    examples/rescale/implementation.py \
+    --equivalents examples/rescale/equivalents.toml
+
+echo "gate: every check passed"

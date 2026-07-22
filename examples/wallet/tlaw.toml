@@ -1,0 +1,27 @@
+version = 1
+tests = ["laws.py"]
+pytest_args = ["-q"]
+
+[baseline]
+name = "correct"
+target = "implementations:CorrectWallet"
+
+[[known_wrong]]
+name = "double-deposit"
+target = "implementations:DoubleDepositWallet"
+breaks = "Depositing changes the balance by exactly the deposited amount."
+
+[[known_wrong]]
+name = "negative-withdrawal"
+target = "implementations:NegativeWithdrawalWallet"
+breaks = "A refused withdrawal changes nothing and balances stay non-negative."
+
+[[known_wrong]]
+name = "minting-transfer"
+target = "implementations:MintingTransferWallet"
+breaks = "Transfers preserve total money and move the exact amount."
+
+[[known_wrong]]
+name = "zero-transfer-fee"
+target = "implementations:ZeroTransferFeeWallet"
+breaks = "Transferring zero changes nothing."

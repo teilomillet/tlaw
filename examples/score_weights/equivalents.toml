@@ -1,0 +1,10 @@
+version = 1
+
+# Softmax is invariant under any constant shift of its inputs, so adding
+# the maximum instead of subtracting it computes the same weights. The
+# two differ only in numerical range, and the declared score domain
+# (-10 through 10) keeps exp() far from overflow either way. Within this
+# boundary the mutant is unobservable; widening the domain would be the
+# way to make it killable.
+[equivalent.5e5bc888f33b]
+reason = "softmax shift-invariance: +max equals -max within the declared domain"
