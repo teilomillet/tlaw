@@ -24,6 +24,14 @@ from .domains import (
     one_of,
 )
 from .refusal import Refusal, raises
+from .mutation import (
+    CanaryRun,
+    Mutation,
+    MutationOutcome,
+    MutationResult,
+    MutantRun,
+    mutate,
+)
 
 
 def audit(specification: str | FilePath = "audit.py") -> AuditResult:
@@ -33,6 +41,7 @@ def audit(specification: str | FilePath = "audit.py") -> AuditResult:
 
 __all__ = [
     "AuditResult",
+    "CanaryRun",
     "CheckResult",
     "Comparison",
     "DependentDomain",
@@ -41,6 +50,10 @@ __all__ = [
     "Equation",
     "KnownWrongOutcome",
     "ManifestError",
+    "MutantRun",
+    "Mutation",
+    "MutationOutcome",
+    "MutationResult",
     "Path",
     "Refusal",
     "System",
@@ -50,6 +63,7 @@ __all__ = [
     "integer",
     "law",
     "list_of",
+    "mutate",
     "number",
     "one_of",
     "raises",
