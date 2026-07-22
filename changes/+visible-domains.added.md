@@ -1,0 +1,1 @@
+Add visible `number`, `integer`, and `list_of` input domains, including supported `Annotated` and PEP 695 alias forms, while rejecting unsupported positions and metadata instead of silently ignoring them.

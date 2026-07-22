@@ -1,11 +1,48 @@
 [project]
 name = "tlaw"
+description = "Write and enforce executable behavioral laws for Python code."
+readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 version = "0.0.1"
 requires-python = ">=3.12"
-dependencies = []
+authors = [{ name = "Teïlo Millet", email = "i@teilomillet.com" }]
+keywords = [
+    "property-based-testing",
+    "hypothesis",
+    "mutation-testing",
+    "specification",
+    "laws",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+    "Typing :: Typed",
+]
+dependencies = [
+    "hypothesis>=6.160.0",
+    "pytest>=9.1.1",
+]
+
+[project.urls]
+Repository = "https://github.com/teilomillet/tlaw"
+Documentation = "https://github.com/teilomillet/tlaw/tree/main/docs"
 
 [build-system]
 requires = ["uv_build>=0.11.28,<0.12.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "numpy>=2.5.1",
+    "ruff>=0.15.22",
+]
