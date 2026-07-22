@@ -1,1 +1,0 @@
-Support package-shaped mutation boundaries: `tlaw mutate laws.py src/pkg/module.py` copies the whole package and shadows the installed one, so intra-package imports resolve inside the mutated copy, the laws may live anywhere, and reports name the boundary shape and dotted module.

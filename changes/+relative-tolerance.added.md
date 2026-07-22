@@ -1,1 +1,0 @@
-Add a `relative=` tolerance to `tlaw.same`, combining with the absolute `within=` like `math.isclose`, so laws over magnitude-spanning numerical values (comparing a refactor to its reference) can state correctness to relative precision instead of a fixed absolute gap.

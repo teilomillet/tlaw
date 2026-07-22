@@ -1,1 +1,0 @@
-Add `tlaw.one_of(values)` for domains that are a finite computed set rather than a range, such as the divisors of a drawn GPU count; it composes with `depends` and refuses an empty collection at definition time.

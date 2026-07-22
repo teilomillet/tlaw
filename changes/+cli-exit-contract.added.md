@@ -1,1 +1,0 @@
-Pin the command-line exit contract with tests at the argparse boundary: `0` when the evidence holds, `1` for a law failure or unexplained survivor, and `2` for broken evidence such as a surviving canary.

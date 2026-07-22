@@ -1,1 +1,0 @@
-Add `tlaw.same(left, right, within=...)` with absolute tolerance and structural comparison for numbers, strings, sequences, dictionaries, and array-like values, retaining the first difference for failures.

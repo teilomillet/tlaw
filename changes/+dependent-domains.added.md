@@ -1,1 +1,0 @@
-Add `tlaw.depends(builder)` dependent domains, so one parameter's domain can be derived from another's generated value; relations such as "no sequence exceeds the budget" are satisfied by construction rather than narrowed inside the law body, and `--explain` reports the dependency instead of a wider domain.
