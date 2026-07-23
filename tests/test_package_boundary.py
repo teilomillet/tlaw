@@ -114,6 +114,15 @@ def test_mutating_a_package_module_kills_its_mutants(tmp_path: Path) -> None:
     # Reports name the module by its dotted path, not a bare stem.
     assert all(run.mutation.qualname.startswith("stretch") for run in result.runs)
     assert "shapes.stretch" in result.render_text()
+    # Killing laws are named by the clean, portable basename, not by a
+    # temp-workspace relative climb full of `../`.
+    killed = [run for run in result.runs if run.failed_tests]
+    assert killed
+    for run in killed:
+        for test in run.failed_tests:
+            assert test.startswith("laws.py::")
+            assert ".." not in test
+    assert ".." not in result.render_text()
 
 
 def test_project_root_laws_still_observe_the_copied_package(tmp_path: Path) -> None:
@@ -149,3 +158,178 @@ def test_a_package_mutant_is_visible_to_its_sibling_importers(
         run.outcome is MutationOutcome.KILLED and "step" in run.mutation.description
         for run in result.runs
     )
+
+
+NS_HELPER = """\
+def factor():
+    return 4
+"""
+
+NS_TARGET = """\
+from space.shapes.scale import factor
+
+
+def stretched(value):
+    return value * factor()
+"""
+
+NS_LAWS = """\
+import tlaw
+
+from space.shapes.geometry import stretched
+
+
+@tlaw.law
+def stretching_multiplies_by_four(value: int):
+    return stretched(value) == value * 4
+"""
+
+
+def _build_namespace_package(root: Path) -> tuple[Path, Path]:
+    """A PEP 420 namespace package: no __init__.py at any level.
+
+    `space` and `space.shapes` are namespace packages; the modules import
+    each other by full dotted name, so the boundary must be discovered
+    from the laws' import, not from an __init__.py chain.
+    """
+    shapes = root / "space" / "shapes"
+    shapes.mkdir(parents=True)
+    (shapes / "scale.py").write_text(NS_HELPER, encoding="utf-8")
+    target = shapes / "geometry.py"
+    target.write_text(NS_TARGET, encoding="utf-8")
+
+    laws_directory = root / "laws"
+    laws_directory.mkdir()
+    laws = laws_directory / "laws.py"
+    laws.write_text(NS_LAWS, encoding="utf-8")
+    return laws, target
+
+
+def test_a_namespace_package_is_found_from_the_laws_import(tmp_path: Path) -> None:
+    laws, target = _build_namespace_package(tmp_path)
+
+    boundary = describe_boundary(laws, target)
+
+    assert boundary.is_package is True
+    assert boundary.module_name == "space.shapes.geometry"
+    # The top namespace directory is copied and shadowed, not the leaf.
+    assert boundary.source == tmp_path / "space"
+
+
+def test_mutating_a_namespace_package_module_kills_its_mutants(
+    tmp_path: Path,
+) -> None:
+    laws, target = _build_namespace_package(tmp_path)
+
+    import os
+
+    env_before = os.environ.get("PYTHONPATH")
+    os.environ["PYTHONPATH"] = (
+        f"{tmp_path}{os.pathsep}{env_before}" if env_before else str(tmp_path)
+    )
+    try:
+        result = mutate(laws, target)
+    finally:
+        if env_before is None:
+            os.environ.pop("PYTHONPATH", None)
+        else:
+            os.environ["PYTHONPATH"] = env_before
+
+    assert result.baseline_valid
+    assert result.canary is not None and result.canary.wired is True
+    assert result.killed_count >= 1
+    assert result.survived_count == 0
+    assert "space.shapes.geometry" in result.render_text()
+
+
+def test_a_regular_package_under_a_namespace_parent_keeps_the_full_name(
+    tmp_path: Path,
+) -> None:
+    shapes = tmp_path / "space" / "shapes"
+    shapes.mkdir(parents=True)
+    (shapes / "__init__.py").write_text("", encoding="utf-8")
+    (shapes / "scale.py").write_text(NS_HELPER, encoding="utf-8")
+    target = shapes / "geometry.py"
+    target.write_text(NS_TARGET, encoding="utf-8")
+    laws = tmp_path / "laws.py"
+    laws.write_text(NS_LAWS, encoding="utf-8")
+
+    boundary = describe_boundary(laws, target)
+
+    assert boundary.source == tmp_path / "space"
+    assert boundary.module_name == "space.shapes.geometry"
+
+    import os
+
+    env_before = os.environ.get("PYTHONPATH")
+    os.environ["PYTHONPATH"] = (
+        f"{tmp_path}{os.pathsep}{env_before}" if env_before else str(tmp_path)
+    )
+    try:
+        result = mutate(laws, target)
+    finally:
+        if env_before is None:
+            os.environ.pop("PYTHONPATH", None)
+        else:
+            os.environ["PYTHONPATH"] = env_before
+
+    assert result.canary is not None and result.canary.wired is True
+    assert result.killed_count >= 1
+    assert result.survived_count == 0
+    assert "space.shapes.geometry" in result.render_text()
+
+
+def test_a_regular_package_init_under_a_namespace_parent_keeps_the_full_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    shapes = tmp_path / "space" / "shapes"
+    shapes.mkdir(parents=True)
+    target = shapes / "__init__.py"
+    target.write_text(
+        "def stretched(value):\n    return value * 4\n",
+        encoding="utf-8",
+    )
+    laws = tmp_path / "laws.py"
+    laws.write_text(
+        """\
+import tlaw
+
+from space.shapes import stretched
+
+
+@tlaw.law
+def stretching_multiplies_by_four(value: int):
+    return stretched(value) == value * 4
+""",
+        encoding="utf-8",
+    )
+
+    boundary = describe_boundary(laws, target)
+
+    assert boundary.source == tmp_path / "space"
+    assert boundary.module_relative == Path("space/shapes/__init__.py")
+    assert boundary.module_name == "space.shapes"
+
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+    result = mutate(laws, target)
+
+    assert result.canary is not None and result.canary.wired is True
+    assert result.killed_count >= 1
+    assert result.survived_count == 0
+    assert "space.shapes" in result.render_text()
+
+
+def test_a_flat_import_is_not_mistaken_for_a_namespace_package(
+    tmp_path: Path,
+) -> None:
+    # `from implementation import f` is a bare name, not dotted, so the
+    # flat boundary still applies and still requires one shared directory.
+    laws = tmp_path / "laws.py"
+    laws.write_text("import tlaw\nfrom implementation import f\n", encoding="utf-8")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    implementation = elsewhere / "implementation.py"
+    implementation.write_text("def f():\n    return 1\n", encoding="utf-8")
+
+    with pytest.raises(ManifestError):
+        describe_boundary(laws, implementation)

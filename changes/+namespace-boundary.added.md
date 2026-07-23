@@ -1,0 +1,1 @@
+Support namespace packages (PEP 420) as mutation boundaries: tlaw reads the dotted module name statically from the laws, then copies and shadows the top namespace directory, including a regular child package beneath a namespace parent.

@@ -923,14 +923,101 @@ def _package_root(module: Path) -> Path | None:
     return root
 
 
+def _dotted_import_name(laws: Path, implementation: Path) -> str | None:
+    """Read the dotted name the laws use to import this module, statically.
+
+    A namespace package (PEP 420) has no ``__init__.py``, so the
+    filesystem alone cannot say whether ``ns/shapes/geometry.py`` is
+    imported as ``ns.shapes.geometry``, ``shapes.geometry``, or
+    ``geometry`` — it depends on what is on the path. The laws must import
+    the module to test it, and that import states the answer. tlaw reads
+    it rather than runs it, the same discipline a law-space diff follows.
+
+    Only a dotted name whose tail matches the implementation's own path is
+    returned, so a coincidental import of a same-named module elsewhere
+    cannot mislead the boundary.
+    """
+    package_init = implementation.name == "__init__.py"
+    stem = implementation.stem
+    try:
+        tree = ast.parse(laws.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return None
+
+    file_parts = (
+        implementation.parent.parts
+        if package_init
+        else implementation.with_suffix("").parts
+    )
+
+    def tail_matches(dotted: str) -> str | None:
+        parts = dotted.split(".")
+        if len(parts) <= 1:
+            return None
+        if file_parts[-len(parts) :] == tuple(parts):
+            return dotted
+        return None
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            if package_init:
+                if matched := tail_matches(node.module):
+                    return matched
+                for alias in node.names:
+                    if matched := tail_matches(f"{node.module}.{alias.name}"):
+                        return matched
+                continue
+            # from a.b.c import name  ->  module is a.b.c, tail is c
+            if node.module.rsplit(".", 1)[-1] == stem:
+                if matched := tail_matches(node.module):
+                    return matched
+            # from a.b import c  ->  the imported name is the module
+            for alias in node.names:
+                if alias.name == stem:
+                    if matched := tail_matches(f"{node.module}.{stem}"):
+                        return matched
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if package_init:
+                    if matched := tail_matches(alias.name):
+                        return matched
+                elif alias.name.rsplit(".", 1)[-1] == stem:
+                    if matched := tail_matches(alias.name):
+                        return matched
+    return None
+
+
 def describe_boundary(laws: Path, implementation: Path) -> Boundary:
     """Decide which boundary shape applies to one laws/implementation pair.
 
     Package detection comes first: a module inside a package must be
     mutated as part of that package, even when the laws happen to sit
-    beside it, because its siblings import it by dotted name.
+    beside it, because its siblings import it by dotted name. A regular
+    package is found by its ``__init__.py`` chain; a namespace package,
+    which has none, is found from how the laws import the module.
     """
     package = _package_root(implementation)
+    dotted = _dotted_import_name(laws, implementation)
+    if dotted is not None:
+        parts = dotted.split(".")
+        if implementation.name == "__init__.py":
+            top_package = implementation.parents[len(parts) - 1]
+            module_relative = Path(*parts) / implementation.name
+        else:
+            top_package = implementation.parents[len(parts) - 2]
+            module_relative = Path(*parts[:-1]) / implementation.name
+        # A namespace may contain another namespace or a regular package.
+        # In both cases the import names the outer boundary that must be
+        # copied; an __init__.py chain alone stops too early in the mixed case.
+        if package is None or top_package != package:
+            return Boundary(
+                source=top_package,
+                module_relative=module_relative,
+                module_name=dotted,
+                laws_directory=laws.parent,
+                laws_name=laws.name,
+                is_package=True,
+            )
     if package is not None:
         relative = implementation.relative_to(package)
         dotted = ".".join((package.name, *relative.with_suffix("").parts))
@@ -1120,6 +1207,14 @@ def _run_one_mutant(
             f"calibrated timeout after {budget_seconds:.1f}s"
             f" ({timeout_multiplier:g}x baseline {baseline_duration:.2f}s)"
         )
+    # Name the killing law by the run's one laws file. pytest reports it by
+    # the path it was addressed with — in a package run a long climb from a
+    # temp workspace, which is ugly and not portable to another machine.
+    prefix = f"{boundary.laws_name}::"
+    failed = tuple(
+        prefix + node.split("::", 1)[1] if "::" in node else node
+        for node in _failed_tests(executed.output)
+    )
     return MutantRun(
         mutation=mutation,
         outcome=outcome,
@@ -1127,7 +1222,7 @@ def _run_one_mutant(
         exit_code=executed.exit_code,
         timed_out=executed.timed_out,
         duration_seconds=executed.duration_seconds,
-        failed_tests=_failed_tests(executed.output),
+        failed_tests=failed,
         output=executed.output,
     )
 
