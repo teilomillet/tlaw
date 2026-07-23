@@ -1,0 +1,712 @@
+{
+  "baseline": {
+    "duration_seconds": 0.7826545419957256,
+    "exit_code": 0,
+    "timed_out": false,
+    "valid": true
+  },
+  "boundary": {
+    "kind": "package",
+    "module": "kvfit.planner"
+  },
+  "budget": {
+    "floor_seconds": 5.0,
+    "multiplier": 10.0,
+    "seconds": 7.826545419957256
+  },
+  "canary": {
+    "duration_seconds": 7.8315917090076255,
+    "exit_code": 124,
+    "note": "canary run exit code 124",
+    "timed_out": true,
+    "wired": true
+  },
+  "implementation": "/Users/teilomillet/Code/kvfit/src/kvfit/planner.py",
+  "laws": "/Users/teilomillet/Code/tlaw/probes/kvfit/laws.py",
+  "mutations": [
+    {
+      "description": "TopologyEstimate.as_dict: replace self.budget_per_rank_bytes / GIB with self.budget_per_rank_bytes * GIB",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 0154727cdfa7\n@@ -21,7 +21,7 @@\n     cross_domain_tensor_parallel: bool = False\n \n     def as_dict(self) -> dict[str, Any]:\n-        return {'tensor_parallel': self.tensor_parallel, 'data_parallel': self.data_parallel, 'budget_per_rank_gib': self.budget_per_rank_bytes / GIB, 'weights_per_rank_gib': self.weights_per_rank_bytes / GIB, 'kv_per_sequence_per_rank_gib': self.kv_per_sequence_per_rank_bytes / GIB, 'sequences_per_replica': self.sequences_per_replica, 'total_sequences': self.total_sequences, 'verdict': self.verdict, 'reason': self.reason, 'scale_up_domain_accelerators': self.scale_up_domain_accelerators, 'tensor_parallel_domains': self.tensor_parallel_domains, 'cross_domain_tensor_parallel': self.cross_domain_tensor_parallel}\n+        return {'tensor_parallel': self.tensor_parallel, 'data_parallel': self.data_parallel, 'budget_per_rank_gib': self.budget_per_rank_bytes * GIB, 'weights_per_rank_gib': self.weights_per_rank_bytes / GIB, 'kv_per_sequence_per_rank_gib': self.kv_per_sequence_per_rank_bytes / GIB, 'sequences_per_replica': self.sequences_per_replica, 'total_sequences': self.total_sequences, 'verdict': self.verdict, 'reason': self.reason, 'scale_up_domain_accelerators': self.scale_up_domain_accelerators, 'tensor_parallel_domains': self.tensor_parallel_domains, 'cross_domain_tensor_parallel': self.cross_domain_tensor_parallel}\n \n def _candidate_tp_sizes(gpus: int, requested_tp: int | None, scale_up_domain_accelerators: int | None) -> list[int]:\n     if gpus < 1:",
+      "duration_seconds": 1.395809833004023,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::as_dict_converts_every_byte_field_to_gib"
+      ],
+      "id": "0154727cdfa7",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "replace-arithmetic-operator",
+      "outcome": "killed",
+      "qualname": "TopologyEstimate.as_dict",
+      "timed_out": false
+    },
+    {
+      "description": "TopologyEstimate.as_dict: replace self.weights_per_rank_bytes / GIB with self.weights_per_rank_bytes * GIB",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant a96ccff9a5ab\n@@ -21,7 +21,7 @@\n     cross_domain_tensor_parallel: bool = False\n \n     def as_dict(self) -> dict[str, Any]:\n-        return {'tensor_parallel': self.tensor_parallel, 'data_parallel': self.data_parallel, 'budget_per_rank_gib': self.budget_per_rank_bytes / GIB, 'weights_per_rank_gib': self.weights_per_rank_bytes / GIB, 'kv_per_sequence_per_rank_gib': self.kv_per_sequence_per_rank_bytes / GIB, 'sequences_per_replica': self.sequences_per_replica, 'total_sequences': self.total_sequences, 'verdict': self.verdict, 'reason': self.reason, 'scale_up_domain_accelerators': self.scale_up_domain_accelerators, 'tensor_parallel_domains': self.tensor_parallel_domains, 'cross_domain_tensor_parallel': self.cross_domain_tensor_parallel}\n+        return {'tensor_parallel': self.tensor_parallel, 'data_parallel': self.data_parallel, 'budget_per_rank_gib': self.budget_per_rank_bytes / GIB, 'weights_per_rank_gib': self.weights_per_rank_bytes * GIB, 'kv_per_sequence_per_rank_gib': self.kv_per_sequence_per_rank_bytes / GIB, 'sequences_per_replica': self.sequences_per_replica, 'total_sequences': self.total_sequences, 'verdict': self.verdict, 'reason': self.reason, 'scale_up_domain_accelerators': self.scale_up_domain_accelerators, 'tensor_parallel_domains': self.tensor_parallel_domains, 'cross_domain_tensor_parallel': self.cross_domain_tensor_parallel}\n \n def _candidate_tp_sizes(gpus: int, requested_tp: int | None, scale_up_domain_accelerators: int | None) -> list[int]:\n     if gpus < 1:",
+      "duration_seconds": 1.289199999999255,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::as_dict_converts_every_byte_field_to_gib"
+      ],
+      "id": "a96ccff9a5ab",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "replace-arithmetic-operator",
+      "outcome": "killed",
+      "qualname": "TopologyEstimate.as_dict",
+      "timed_out": false
+    },
+    {
+      "description": "TopologyEstimate.as_dict: replace self.kv_per_sequence_per_rank_bytes / GIB with self.kv_per_sequence_per_rank_bytes * GIB",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 8e6a486edf34\n@@ -21,7 +21,7 @@\n     cross_domain_tensor_parallel: bool = False\n \n     def as_dict(self) -> dict[str, Any]:\n-        return {'tensor_parallel': self.tensor_parallel, 'data_parallel': self.data_parallel, 'budget_per_rank_gib': self.budget_per_rank_bytes / GIB, 'weights_per_rank_gib': self.weights_per_rank_bytes / GIB, 'kv_per_sequence_per_rank_gib': self.kv_per_sequence_per_rank_bytes / GIB, 'sequences_per_replica': self.sequences_per_replica, 'total_sequences': self.total_sequences, 'verdict': self.verdict, 'reason': self.reason, 'scale_up_domain_accelerators': self.scale_up_domain_accelerators, 'tensor_parallel_domains': self.tensor_parallel_domains, 'cross_domain_tensor_parallel': self.cross_domain_tensor_parallel}\n+        return {'tensor_parallel': self.tensor_parallel, 'data_parallel': self.data_parallel, 'budget_per_rank_gib': self.budget_per_rank_bytes / GIB, 'weights_per_rank_gib': self.weights_per_rank_bytes / GIB, 'kv_per_sequence_per_rank_gib': self.kv_per_sequence_per_rank_bytes * GIB, 'sequences_per_replica': self.sequences_per_replica, 'total_sequences': self.total_sequences, 'verdict': self.verdict, 'reason': self.reason, 'scale_up_domain_accelerators': self.scale_up_domain_accelerators, 'tensor_parallel_domains': self.tensor_parallel_domains, 'cross_domain_tensor_parallel': self.cross_domain_tensor_parallel}\n \n def _candidate_tp_sizes(gpus: int, requested_tp: int | None, scale_up_domain_accelerators: int | None) -> list[int]:\n     if gpus < 1:",
+      "duration_seconds": 1.4486946669931058,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::as_dict_converts_every_byte_field_to_gib"
+      ],
+      "id": "8e6a486edf34",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "replace-arithmetic-operator",
+      "outcome": "killed",
+      "qualname": "TopologyEstimate.as_dict",
+      "timed_out": false
+    },
+    {
+      "description": "_candidate_tp_sizes: replace gpus < 1 with not gpus < 1",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 22596609f7ca\n@@ -24,7 +24,7 @@\n         return {'tensor_parallel': self.tensor_parallel, 'data_parallel': self.data_parallel, 'budget_per_rank_gib': self.budget_per_rank_bytes / GIB, 'weights_per_rank_gib': self.weights_per_rank_bytes / GIB, 'kv_per_sequence_per_rank_gib': self.kv_per_sequence_per_rank_bytes / GIB, 'sequences_per_replica': self.sequences_per_replica, 'total_sequences': self.total_sequences, 'verdict': self.verdict, 'reason': self.reason, 'scale_up_domain_accelerators': self.scale_up_domain_accelerators, 'tensor_parallel_domains': self.tensor_parallel_domains, 'cross_domain_tensor_parallel': self.cross_domain_tensor_parallel}\n \n def _candidate_tp_sizes(gpus: int, requested_tp: int | None, scale_up_domain_accelerators: int | None) -> list[int]:\n-    if gpus < 1:\n+    if not gpus < 1:\n         raise ValueError('gpus must be positive')\n     if requested_tp is not None:\n         if requested_tp < 1 or gpus % requested_tp:",
+      "duration_seconds": 7.831886874992051,
+      "exit_code": 124,
+      "failed_tests": [],
+      "id": "22596609f7ca",
+      "note": "calibrated timeout after 7.8s (10x baseline 0.78s); replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_candidate_tp_sizes",
+      "timed_out": true
+    },
+    {
+      "description": "_candidate_tp_sizes: replace gpus < 1 with gpus <= 1",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 780511d628da\n@@ -24,7 +24,7 @@\n         return {'tensor_parallel': self.tensor_parallel, 'data_parallel': self.data_parallel, 'budget_per_rank_gib': self.budget_per_rank_bytes / GIB, 'weights_per_rank_gib': self.weights_per_rank_bytes / GIB, 'kv_per_sequence_per_rank_gib': self.kv_per_sequence_per_rank_bytes / GIB, 'sequences_per_replica': self.sequences_per_replica, 'total_sequences': self.total_sequences, 'verdict': self.verdict, 'reason': self.reason, 'scale_up_domain_accelerators': self.scale_up_domain_accelerators, 'tensor_parallel_domains': self.tensor_parallel_domains, 'cross_domain_tensor_parallel': self.cross_domain_tensor_parallel}\n \n def _candidate_tp_sizes(gpus: int, requested_tp: int | None, scale_up_domain_accelerators: int | None) -> list[int]:\n-    if gpus < 1:\n+    if gpus <= 1:\n         raise ValueError('gpus must be positive')\n     if requested_tp is not None:\n         if requested_tp < 1 or gpus % requested_tp:",
+      "duration_seconds": 7.771708332991693,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::every_layout_partitions_the_gpus_and_conserves_sequences",
+        "laws.py::every_verdict_is_justified_by_its_own_reported_numbers",
+        "laws.py::raising_utilization_never_lowers_any_layouts_capacity",
+        "laws.py::heavier_weights_never_raise_capacity",
+        "laws.py::the_budget_is_anchored_to_the_hardware_and_utilization",
+        "laws.py::an_explicit_tensor_parallel_size_is_honoured",
+        "laws.py::scale_up_domains_are_reported_and_counted",
+        "laws.py::as_dict_converts_every_byte_field_to_gib",
+        "laws.py::weights_and_kv_shard_by_tensor_parallel",
+        "laws.py::every_gpu_divisor_is_a_tensor_parallel_candidate",
+        "laws.py::concurrency_divides_active_sequences_by_user",
+        "laws.py::the_cross_domain_flag_matches_its_definition",
+        "laws.py::a_layout_with_room_for_one_sequence_fits",
+        "laws.py::weights_exactly_filling_the_budget_leave_no_kv_room"
+      ],
+      "id": "780511d628da",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "killed",
+      "qualname": "_candidate_tp_sizes",
+      "timed_out": false
+    },
+    {
+      "description": "_candidate_tp_sizes: replace requested_tp is not None with not requested_tp is not None",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant c588f31eebe0\n@@ -26,7 +26,7 @@\n def _candidate_tp_sizes(gpus: int, requested_tp: int | None, scale_up_domain_accelerators: int | None) -> list[int]:\n     if gpus < 1:\n         raise ValueError('gpus must be positive')\n-    if requested_tp is not None:\n+    if not requested_tp is not None:\n         if requested_tp < 1 or gpus % requested_tp:\n             raise ValueError('tensor parallel size must be a positive divisor of the GPU count')\n         return [requested_tp]",
+      "duration_seconds": 7.831729292011005,
+      "exit_code": 124,
+      "failed_tests": [],
+      "id": "c588f31eebe0",
+      "note": "calibrated timeout after 7.8s (10x baseline 0.78s); replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_candidate_tp_sizes",
+      "timed_out": true
+    },
+    {
+      "description": "_candidate_tp_sizes: replace requested_tp < 1 or gpus % requested_tp with not (requested_tp < 1 or gpus % requested_tp)",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 462f24dd451a\n@@ -27,7 +27,7 @@\n     if gpus < 1:\n         raise ValueError('gpus must be positive')\n     if requested_tp is not None:\n-        if requested_tp < 1 or gpus % requested_tp:\n+        if not (requested_tp < 1 or gpus % requested_tp):\n             raise ValueError('tensor parallel size must be a positive divisor of the GPU count')\n         return [requested_tp]\n     candidates = [size for size in range(1, gpus + 1) if gpus % size == 0]",
+      "duration_seconds": 0.9991183749953052,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::an_explicit_tensor_parallel_size_is_honoured"
+      ],
+      "id": "462f24dd451a",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_candidate_tp_sizes",
+      "timed_out": false
+    },
+    {
+      "description": "_candidate_tp_sizes: replace requested_tp < 1 with requested_tp <= 1",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 91c32b057a70\n@@ -27,7 +27,7 @@\n     if gpus < 1:\n         raise ValueError('gpus must be positive')\n     if requested_tp is not None:\n-        if requested_tp < 1 or gpus % requested_tp:\n+        if requested_tp <= 1 or gpus % requested_tp:\n             raise ValueError('tensor parallel size must be a positive divisor of the GPU count')\n         return [requested_tp]\n     candidates = [size for size in range(1, gpus + 1) if gpus % size == 0]",
+      "duration_seconds": 0.8698493340052664,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::an_explicit_tensor_parallel_size_is_honoured"
+      ],
+      "id": "91c32b057a70",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "killed",
+      "qualname": "_candidate_tp_sizes",
+      "timed_out": false
+    },
+    {
+      "description": "_candidate_tp_sizes: replace gpus + 1 with gpus - 1",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 97eb7de160dd\n@@ -30,7 +30,7 @@\n         if requested_tp < 1 or gpus % requested_tp:\n             raise ValueError('tensor parallel size must be a positive divisor of the GPU count')\n         return [requested_tp]\n-    candidates = [size for size in range(1, gpus + 1) if gpus % size == 0]\n+    candidates = [size for size in range(1, gpus - 1) if gpus % size == 0]\n     if scale_up_domain_accelerators is None:\n         return candidates\n     return [size for size in candidates if size <= scale_up_domain_accelerators and scale_up_domain_accelerators % size == 0 or size % scale_up_domain_accelerators == 0]",
+      "duration_seconds": 1.8145634579996113,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::every_gpu_divisor_is_a_tensor_parallel_candidate",
+        "laws.py::a_layout_with_room_for_one_sequence_fits",
+        "laws.py::weights_exactly_filling_the_budget_leave_no_kv_room"
+      ],
+      "id": "97eb7de160dd",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "replace-arithmetic-operator",
+      "outcome": "killed",
+      "qualname": "_candidate_tp_sizes",
+      "timed_out": false
+    },
+    {
+      "description": "_candidate_tp_sizes: replace scale_up_domain_accelerators is None with not scale_up_domain_accelerators is None",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 19b29fea9ff5\n@@ -31,7 +31,7 @@\n             raise ValueError('tensor parallel size must be a positive divisor of the GPU count')\n         return [requested_tp]\n     candidates = [size for size in range(1, gpus + 1) if gpus % size == 0]\n-    if scale_up_domain_accelerators is None:\n+    if not scale_up_domain_accelerators is None:\n         return candidates\n     return [size for size in candidates if size <= scale_up_domain_accelerators and scale_up_domain_accelerators % size == 0 or size % scale_up_domain_accelerators == 0]\n ",
+      "duration_seconds": 7.833163417002652,
+      "exit_code": 124,
+      "failed_tests": [],
+      "id": "19b29fea9ff5",
+      "note": "calibrated timeout after 7.8s (10x baseline 0.78s); replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_candidate_tp_sizes",
+      "timed_out": true
+    },
+    {
+      "description": "_candidate_tp_sizes: replace size <= scale_up_domain_accelerators with size < scale_up_domain_accelerators",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 617903f6c6bb\n@@ -33,7 +33,7 @@\n     candidates = [size for size in range(1, gpus + 1) if gpus % size == 0]\n     if scale_up_domain_accelerators is None:\n         return candidates\n-    return [size for size in candidates if size <= scale_up_domain_accelerators and scale_up_domain_accelerators % size == 0 or size % scale_up_domain_accelerators == 0]\n+    return [size for size in candidates if size < scale_up_domain_accelerators and scale_up_domain_accelerators % size == 0 or size % scale_up_domain_accelerators == 0]\n \n def plan_topologies(cache: CacheEstimate, *, weight_bytes: int, hardware: Hardware, gpus: int, utilization: float, tensor_parallel: int | None=None, scale_up_domain_accelerators: int | None=None) -> tuple[TopologyEstimate, ...]:\n     \"\"\"Plan replicated TP groups using ideal weight sharding.",
+      "duration_seconds": 0.8033628329867497,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "617903f6c6bb",
+      "note": "declared equivalent: size == scale_up is always kept by the size % scale_up == 0 clause",
+      "operator": "alter-comparison-boundary",
+      "outcome": "unresolved-equivalent",
+      "qualname": "_candidate_tp_sizes",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace weight_bytes < 0 with not weight_bytes < 0",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 0ed3a8a8c370\n@@ -41,7 +41,7 @@\n     Expert parallelism, pipeline parallelism, CPU offload, and context parallelism\n     are intentionally not inferred. Data-parallel groups here are full replicas.\n     \"\"\"\n-    if weight_bytes < 0:\n+    if not weight_bytes < 0:\n         raise ValueError('weight_bytes must not be negative')\n     if not 0 < utilization <= 1:\n         raise ValueError('utilization must be in (0, 1]')",
+      "duration_seconds": 7.833016500007943,
+      "exit_code": 124,
+      "failed_tests": [
+        "laws.py::every_layout_partitions_the_gpus_and_conserves_sequences",
+        "laws.py::every_verdict_is_justified_by_its_own_reported_numbers",
+        "laws.py::raising_utilization_never_lowers_any_layouts_capacity",
+        "laws.py::heavier_weights_never_raise_capacity",
+        "laws.py::the_budget_is_anchored_to_the_hardware_and_utilization",
+        "laws.py::an_explicit_tensor_parallel_size_is_honoured",
+        "laws.py::scale_up_domains_are_reported_and_counted",
+        "laws.py::as_dict_converts_every_byte_field_to_gib",
+        "laws.py::weights_and_kv_shard_by_tensor_parallel",
+        "laws.py::every_gpu_divisor_is_a_tensor_parallel_candidate",
+        "laws.py::concurrency_divides_active_sequences_by_user",
+        "laws.py::the_cross_domain_flag_matches_its_definition",
+        "laws.py::a_layout_with_room_for_one_sequence_fits",
+        "laws.py::weights_exactly_filling_the_budget_leave_no_kv_room"
+      ],
+      "id": "0ed3a8a8c370",
+      "note": "calibrated timeout after 7.8s (10x baseline 0.78s); replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": true
+    },
+    {
+      "description": "plan_topologies: replace weight_bytes < 0 with weight_bytes <= 0",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 721cbac4113e\n@@ -41,7 +41,7 @@\n     Expert parallelism, pipeline parallelism, CPU offload, and context parallelism\n     are intentionally not inferred. Data-parallel groups here are full replicas.\n     \"\"\"\n-    if weight_bytes < 0:\n+    if weight_bytes <= 0:\n         raise ValueError('weight_bytes must not be negative')\n     if not 0 < utilization <= 1:\n         raise ValueError('utilization must be in (0, 1]')",
+      "duration_seconds": 5.9087146249949,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::every_layout_partitions_the_gpus_and_conserves_sequences",
+        "laws.py::every_verdict_is_justified_by_its_own_reported_numbers",
+        "laws.py::raising_utilization_never_lowers_any_layouts_capacity",
+        "laws.py::heavier_weights_never_raise_capacity",
+        "laws.py::the_budget_is_anchored_to_the_hardware_and_utilization",
+        "laws.py::an_explicit_tensor_parallel_size_is_honoured",
+        "laws.py::scale_up_domains_are_reported_and_counted",
+        "laws.py::as_dict_converts_every_byte_field_to_gib",
+        "laws.py::weights_and_kv_shard_by_tensor_parallel",
+        "laws.py::every_gpu_divisor_is_a_tensor_parallel_candidate",
+        "laws.py::concurrency_divides_active_sequences_by_user",
+        "laws.py::the_cross_domain_flag_matches_its_definition",
+        "laws.py::a_layout_with_room_for_one_sequence_fits"
+      ],
+      "id": "721cbac4113e",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace not 0 < utilization <= 1 with not not 0 < utilization <= 1",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant c7279398ba8d\n@@ -43,7 +43,7 @@\n     \"\"\"\n     if weight_bytes < 0:\n         raise ValueError('weight_bytes must not be negative')\n-    if not 0 < utilization <= 1:\n+    if not not 0 < utilization <= 1:\n         raise ValueError('utilization must be in (0, 1]')\n     if scale_up_domain_accelerators is not None:\n         if scale_up_domain_accelerators < 1:",
+      "duration_seconds": 7.833341916993959,
+      "exit_code": 124,
+      "failed_tests": [],
+      "id": "c7279398ba8d",
+      "note": "calibrated timeout after 7.8s (10x baseline 0.78s); replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": true
+    },
+    {
+      "description": "plan_topologies: replace 0 < utilization <= 1 with 0 <= utilization <= 1",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 896fbc8ac1ac\n@@ -43,7 +43,7 @@\n     \"\"\"\n     if weight_bytes < 0:\n         raise ValueError('weight_bytes must not be negative')\n-    if not 0 < utilization <= 1:\n+    if not 0 <= utilization <= 1:\n         raise ValueError('utilization must be in (0, 1]')\n     if scale_up_domain_accelerators is not None:\n         if scale_up_domain_accelerators < 1:",
+      "duration_seconds": 1.2390223749971483,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::zero_utilization_is_refused"
+      ],
+      "id": "896fbc8ac1ac",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace 0 < utilization <= 1 with 0 < utilization < 1",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 574583a2147d\n@@ -43,7 +43,7 @@\n     \"\"\"\n     if weight_bytes < 0:\n         raise ValueError('weight_bytes must not be negative')\n-    if not 0 < utilization <= 1:\n+    if not 0 < utilization < 1:\n         raise ValueError('utilization must be in (0, 1]')\n     if scale_up_domain_accelerators is not None:\n         if scale_up_domain_accelerators < 1:",
+      "duration_seconds": 7.159192499995697,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::every_layout_partitions_the_gpus_and_conserves_sequences",
+        "laws.py::every_verdict_is_justified_by_its_own_reported_numbers",
+        "laws.py::raising_utilization_never_lowers_any_layouts_capacity",
+        "laws.py::heavier_weights_never_raise_capacity",
+        "laws.py::the_budget_is_anchored_to_the_hardware_and_utilization",
+        "laws.py::an_explicit_tensor_parallel_size_is_honoured",
+        "laws.py::scale_up_domains_are_reported_and_counted",
+        "laws.py::as_dict_converts_every_byte_field_to_gib",
+        "laws.py::weights_and_kv_shard_by_tensor_parallel",
+        "laws.py::every_gpu_divisor_is_a_tensor_parallel_candidate",
+        "laws.py::concurrency_divides_active_sequences_by_user",
+        "laws.py::the_cross_domain_flag_matches_its_definition",
+        "laws.py::a_layout_with_room_for_one_sequence_fits",
+        "laws.py::weights_exactly_filling_the_budget_leave_no_kv_room"
+      ],
+      "id": "574583a2147d",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace scale_up_domain_accelerators is not None with not scale_up_domain_accelerators is not None",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 7d758e4d3f21\n@@ -45,7 +45,7 @@\n         raise ValueError('weight_bytes must not be negative')\n     if not 0 < utilization <= 1:\n         raise ValueError('utilization must be in (0, 1]')\n-    if scale_up_domain_accelerators is not None:\n+    if not scale_up_domain_accelerators is not None:\n         if scale_up_domain_accelerators < 1:\n             raise ValueError('scale-up domain accelerator count must be positive')\n         if gpus % scale_up_domain_accelerators:",
+      "duration_seconds": 7.455869292010902,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::every_layout_partitions_the_gpus_and_conserves_sequences",
+        "laws.py::every_verdict_is_justified_by_its_own_reported_numbers",
+        "laws.py::raising_utilization_never_lowers_any_layouts_capacity",
+        "laws.py::heavier_weights_never_raise_capacity",
+        "laws.py::the_budget_is_anchored_to_the_hardware_and_utilization",
+        "laws.py::an_explicit_tensor_parallel_size_is_honoured",
+        "laws.py::as_dict_converts_every_byte_field_to_gib",
+        "laws.py::weights_and_kv_shard_by_tensor_parallel",
+        "laws.py::every_gpu_divisor_is_a_tensor_parallel_candidate",
+        "laws.py::concurrency_divides_active_sequences_by_user",
+        "laws.py::a_layout_with_room_for_one_sequence_fits",
+        "laws.py::weights_exactly_filling_the_budget_leave_no_kv_room"
+      ],
+      "id": "7d758e4d3f21",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace scale_up_domain_accelerators < 1 with not scale_up_domain_accelerators < 1",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 086e0fed7ef7\n@@ -46,7 +46,7 @@\n     if not 0 < utilization <= 1:\n         raise ValueError('utilization must be in (0, 1]')\n     if scale_up_domain_accelerators is not None:\n-        if scale_up_domain_accelerators < 1:\n+        if not scale_up_domain_accelerators < 1:\n             raise ValueError('scale-up domain accelerator count must be positive')\n         if gpus % scale_up_domain_accelerators:\n             raise ValueError('GPU count must be a multiple of the scale-up domain size')",
+      "duration_seconds": 1.0643242919904878,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::scale_up_domains_are_reported_and_counted",
+        "laws.py::the_cross_domain_flag_matches_its_definition"
+      ],
+      "id": "086e0fed7ef7",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace scale_up_domain_accelerators < 1 with scale_up_domain_accelerators <= 1",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant b957d915b340\n@@ -46,7 +46,7 @@\n     if not 0 < utilization <= 1:\n         raise ValueError('utilization must be in (0, 1]')\n     if scale_up_domain_accelerators is not None:\n-        if scale_up_domain_accelerators < 1:\n+        if scale_up_domain_accelerators <= 1:\n             raise ValueError('scale-up domain accelerator count must be positive')\n         if gpus % scale_up_domain_accelerators:\n             raise ValueError('GPU count must be a multiple of the scale-up domain size')",
+      "duration_seconds": 0.8208415830013109,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::scale_up_domains_are_reported_and_counted",
+        "laws.py::the_cross_domain_flag_matches_its_definition"
+      ],
+      "id": "b957d915b340",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace gpus % scale_up_domain_accelerators with not gpus % scale_up_domain_accelerators",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 7420c97f18fa\n@@ -48,7 +48,7 @@\n     if scale_up_domain_accelerators is not None:\n         if scale_up_domain_accelerators < 1:\n             raise ValueError('scale-up domain accelerator count must be positive')\n-        if gpus % scale_up_domain_accelerators:\n+        if not gpus % scale_up_domain_accelerators:\n             raise ValueError('GPU count must be a multiple of the scale-up domain size')\n     budget = hardware.memory_gib * GIB * utilization\n     layouts: list[TopologyEstimate] = []",
+      "duration_seconds": 1.0706345829967177,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::scale_up_domains_are_reported_and_counted",
+        "laws.py::the_cross_domain_flag_matches_its_definition"
+      ],
+      "id": "7420c97f18fa",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace hardware.memory_gib * GIB * utilization with hardware.memory_gib * GIB / utilization",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant e0fc53db59b4\n@@ -50,7 +50,7 @@\n             raise ValueError('scale-up domain accelerator count must be positive')\n         if gpus % scale_up_domain_accelerators:\n             raise ValueError('GPU count must be a multiple of the scale-up domain size')\n-    budget = hardware.memory_gib * GIB * utilization\n+    budget = hardware.memory_gib * GIB / utilization\n     layouts: list[TopologyEstimate] = []\n     for tp in _candidate_tp_sizes(gpus, tensor_parallel, scale_up_domain_accelerators):\n         dp = gpus // tp",
+      "duration_seconds": 1.7908835420093965,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::raising_utilization_never_lowers_any_layouts_capacity",
+        "laws.py::the_budget_is_anchored_to_the_hardware_and_utilization"
+      ],
+      "id": "e0fc53db59b4",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "replace-arithmetic-operator",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace hardware.memory_gib * GIB with hardware.memory_gib / GIB",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant dde63bc46cd6\n@@ -50,7 +50,7 @@\n             raise ValueError('scale-up domain accelerator count must be positive')\n         if gpus % scale_up_domain_accelerators:\n             raise ValueError('GPU count must be a multiple of the scale-up domain size')\n-    budget = hardware.memory_gib * GIB * utilization\n+    budget = hardware.memory_gib / GIB * utilization\n     layouts: list[TopologyEstimate] = []\n     for tp in _candidate_tp_sizes(gpus, tensor_parallel, scale_up_domain_accelerators):\n         dp = gpus // tp",
+      "duration_seconds": 1.7692809590080287,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::the_budget_is_anchored_to_the_hardware_and_utilization",
+        "laws.py::a_layout_with_room_for_one_sequence_fits",
+        "laws.py::weights_exactly_filling_the_budget_leave_no_kv_room"
+      ],
+      "id": "dde63bc46cd6",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "replace-arithmetic-operator",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace tp > scale_up_domain_accelerators with tp >= scale_up_domain_accelerators",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 7e4db426f250\n@@ -54,7 +54,7 @@\n     layouts: list[TopologyEstimate] = []\n     for tp in _candidate_tp_sizes(gpus, tensor_parallel, scale_up_domain_accelerators):\n         dp = gpus // tp\n-        crosses_domain = bool(scale_up_domain_accelerators and (tp > scale_up_domain_accelerators or scale_up_domain_accelerators % tp != 0))\n+        crosses_domain = bool(scale_up_domain_accelerators and (tp >= scale_up_domain_accelerators or scale_up_domain_accelerators % tp != 0))\n         domains = math.ceil(tp / scale_up_domain_accelerators) if scale_up_domain_accelerators else 1\n         if cache.query_heads % tp:\n             layouts.append(TopologyEstimate(tensor_parallel=tp, data_parallel=dp, budget_per_rank_bytes=budget, weights_per_rank_bytes=weight_bytes / tp, kv_per_sequence_per_rank_bytes=math.inf, sequences_per_replica=0, total_sequences=0, verdict='unsupported', reason=f'{cache.query_heads} query heads are not divisible by TP={tp}', scale_up_domain_accelerators=scale_up_domain_accelerators, tensor_parallel_domains=domains, cross_domain_tensor_parallel=crosses_domain))",
+      "duration_seconds": 0.9245753750001313,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::the_cross_domain_flag_matches_its_definition"
+      ],
+      "id": "7e4db426f250",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace tp / scale_up_domain_accelerators with tp * scale_up_domain_accelerators",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 0eeadc112d1f\n@@ -55,7 +55,7 @@\n     for tp in _candidate_tp_sizes(gpus, tensor_parallel, scale_up_domain_accelerators):\n         dp = gpus // tp\n         crosses_domain = bool(scale_up_domain_accelerators and (tp > scale_up_domain_accelerators or scale_up_domain_accelerators % tp != 0))\n-        domains = math.ceil(tp / scale_up_domain_accelerators) if scale_up_domain_accelerators else 1\n+        domains = math.ceil(tp * scale_up_domain_accelerators) if scale_up_domain_accelerators else 1\n         if cache.query_heads % tp:\n             layouts.append(TopologyEstimate(tensor_parallel=tp, data_parallel=dp, budget_per_rank_bytes=budget, weights_per_rank_bytes=weight_bytes / tp, kv_per_sequence_per_rank_bytes=math.inf, sequences_per_replica=0, total_sequences=0, verdict='unsupported', reason=f'{cache.query_heads} query heads are not divisible by TP={tp}', scale_up_domain_accelerators=scale_up_domain_accelerators, tensor_parallel_domains=domains, cross_domain_tensor_parallel=crosses_domain))\n             continue",
+      "duration_seconds": 0.8532905840111198,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::scale_up_domains_are_reported_and_counted"
+      ],
+      "id": "0eeadc112d1f",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "replace-arithmetic-operator",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace cache.query_heads % tp with not cache.query_heads % tp",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 11e718c8a845\n@@ -56,7 +56,7 @@\n         dp = gpus // tp\n         crosses_domain = bool(scale_up_domain_accelerators and (tp > scale_up_domain_accelerators or scale_up_domain_accelerators % tp != 0))\n         domains = math.ceil(tp / scale_up_domain_accelerators) if scale_up_domain_accelerators else 1\n-        if cache.query_heads % tp:\n+        if not cache.query_heads % tp:\n             layouts.append(TopologyEstimate(tensor_parallel=tp, data_parallel=dp, budget_per_rank_bytes=budget, weights_per_rank_bytes=weight_bytes / tp, kv_per_sequence_per_rank_bytes=math.inf, sequences_per_replica=0, total_sequences=0, verdict='unsupported', reason=f'{cache.query_heads} query heads are not divisible by TP={tp}', scale_up_domain_accelerators=scale_up_domain_accelerators, tensor_parallel_domains=domains, cross_domain_tensor_parallel=crosses_domain))\n             continue\n         weights_per_rank = weight_bytes / tp",
+      "duration_seconds": 1.7814343750069384,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::every_verdict_is_justified_by_its_own_reported_numbers",
+        "laws.py::a_layout_with_room_for_one_sequence_fits",
+        "laws.py::weights_exactly_filling_the_budget_leave_no_kv_room"
+      ],
+      "id": "11e718c8a845",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace layouts.append(TopologyEstimate(tensor_parallel=tp, data_parallel=dp, budget_per_rank_bytes=budget, weights_per_rank_bytes=weight_bytes / tp, kv_per_sequence_per_rank_bytes=math.inf, sequences_per_replica=0, total_sequences=0, verdict='unsupported', reason=f'{cache.query_heads} query heads are not divisible by TP={tp}', scale_up_domain_accelerators=scale_up_domain_accelerators, tensor_parallel_domains=domains, cross_domain_tensor_parallel=crosses_domain)) with pass",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 21b3070a2567\n@@ -57,7 +57,7 @@\n         crosses_domain = bool(scale_up_domain_accelerators and (tp > scale_up_domain_accelerators or scale_up_domain_accelerators % tp != 0))\n         domains = math.ceil(tp / scale_up_domain_accelerators) if scale_up_domain_accelerators else 1\n         if cache.query_heads % tp:\n-            layouts.append(TopologyEstimate(tensor_parallel=tp, data_parallel=dp, budget_per_rank_bytes=budget, weights_per_rank_bytes=weight_bytes / tp, kv_per_sequence_per_rank_bytes=math.inf, sequences_per_replica=0, total_sequences=0, verdict='unsupported', reason=f'{cache.query_heads} query heads are not divisible by TP={tp}', scale_up_domain_accelerators=scale_up_domain_accelerators, tensor_parallel_domains=domains, cross_domain_tensor_parallel=crosses_domain))\n+            pass\n             continue\n         weights_per_rank = weight_bytes / tp\n         kv_per_rank = sum((component.bytes / min(tp, component.tp_parallel_units or cache.kv_parallel_heads) for component in cache.components))",
+      "duration_seconds": 1.3570354580006097,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::an_explicit_tensor_parallel_size_is_honoured",
+        "laws.py::every_gpu_divisor_is_a_tensor_parallel_candidate"
+      ],
+      "id": "21b3070a2567",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "skip-call-statement",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace weight_bytes / tp with weight_bytes * tp",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 6f8c3baec145\n@@ -57,7 +57,7 @@\n         crosses_domain = bool(scale_up_domain_accelerators and (tp > scale_up_domain_accelerators or scale_up_domain_accelerators % tp != 0))\n         domains = math.ceil(tp / scale_up_domain_accelerators) if scale_up_domain_accelerators else 1\n         if cache.query_heads % tp:\n-            layouts.append(TopologyEstimate(tensor_parallel=tp, data_parallel=dp, budget_per_rank_bytes=budget, weights_per_rank_bytes=weight_bytes / tp, kv_per_sequence_per_rank_bytes=math.inf, sequences_per_replica=0, total_sequences=0, verdict='unsupported', reason=f'{cache.query_heads} query heads are not divisible by TP={tp}', scale_up_domain_accelerators=scale_up_domain_accelerators, tensor_parallel_domains=domains, cross_domain_tensor_parallel=crosses_domain))\n+            layouts.append(TopologyEstimate(tensor_parallel=tp, data_parallel=dp, budget_per_rank_bytes=budget, weights_per_rank_bytes=weight_bytes * tp, kv_per_sequence_per_rank_bytes=math.inf, sequences_per_replica=0, total_sequences=0, verdict='unsupported', reason=f'{cache.query_heads} query heads are not divisible by TP={tp}', scale_up_domain_accelerators=scale_up_domain_accelerators, tensor_parallel_domains=domains, cross_domain_tensor_parallel=crosses_domain))\n             continue\n         weights_per_rank = weight_bytes / tp\n         kv_per_rank = sum((component.bytes / min(tp, component.tp_parallel_units or cache.kv_parallel_heads) for component in cache.components))",
+      "duration_seconds": 1.2902194170019357,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::weights_and_kv_shard_by_tensor_parallel"
+      ],
+      "id": "6f8c3baec145",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "replace-arithmetic-operator",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace weight_bytes / tp with weight_bytes * tp",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 4fafa3749687\n@@ -59,7 +59,7 @@\n         if cache.query_heads % tp:\n             layouts.append(TopologyEstimate(tensor_parallel=tp, data_parallel=dp, budget_per_rank_bytes=budget, weights_per_rank_bytes=weight_bytes / tp, kv_per_sequence_per_rank_bytes=math.inf, sequences_per_replica=0, total_sequences=0, verdict='unsupported', reason=f'{cache.query_heads} query heads are not divisible by TP={tp}', scale_up_domain_accelerators=scale_up_domain_accelerators, tensor_parallel_domains=domains, cross_domain_tensor_parallel=crosses_domain))\n             continue\n-        weights_per_rank = weight_bytes / tp\n+        weights_per_rank = weight_bytes * tp\n         kv_per_rank = sum((component.bytes / min(tp, component.tp_parallel_units or cache.kv_parallel_heads) for component in cache.components))\n         available_for_kv = budget - weights_per_rank\n         if available_for_kv < 0:",
+      "duration_seconds": 1.2911546249961248,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::weights_and_kv_shard_by_tensor_parallel"
+      ],
+      "id": "4fafa3749687",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "replace-arithmetic-operator",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace component.bytes / min(tp, component.tp_parallel_units or cache.kv_parallel_heads) with component.bytes * min(tp, component.tp_parallel_units or cache.kv_parallel_heads)",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 284eea445f68\n@@ -60,7 +60,7 @@\n             layouts.append(TopologyEstimate(tensor_parallel=tp, data_parallel=dp, budget_per_rank_bytes=budget, weights_per_rank_bytes=weight_bytes / tp, kv_per_sequence_per_rank_bytes=math.inf, sequences_per_replica=0, total_sequences=0, verdict='unsupported', reason=f'{cache.query_heads} query heads are not divisible by TP={tp}', scale_up_domain_accelerators=scale_up_domain_accelerators, tensor_parallel_domains=domains, cross_domain_tensor_parallel=crosses_domain))\n             continue\n         weights_per_rank = weight_bytes / tp\n-        kv_per_rank = sum((component.bytes / min(tp, component.tp_parallel_units or cache.kv_parallel_heads) for component in cache.components))\n+        kv_per_rank = sum((component.bytes * min(tp, component.tp_parallel_units or cache.kv_parallel_heads) for component in cache.components))\n         available_for_kv = budget - weights_per_rank\n         if available_for_kv < 0:\n             sequences = 0",
+      "duration_seconds": 1.3412406249990454,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::weights_and_kv_shard_by_tensor_parallel"
+      ],
+      "id": "284eea445f68",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "replace-arithmetic-operator",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace budget - weights_per_rank with budget + weights_per_rank",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 0252a998af6f\n@@ -61,7 +61,7 @@\n             continue\n         weights_per_rank = weight_bytes / tp\n         kv_per_rank = sum((component.bytes / min(tp, component.tp_parallel_units or cache.kv_parallel_heads) for component in cache.components))\n-        available_for_kv = budget - weights_per_rank\n+        available_for_kv = budget + weights_per_rank\n         if available_for_kv < 0:\n             sequences = 0\n             verdict = 'weights-oom'",
+      "duration_seconds": 1.563292624996393,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::every_verdict_is_justified_by_its_own_reported_numbers",
+        "laws.py::heavier_weights_never_raise_capacity",
+        "laws.py::weights_exactly_filling_the_budget_leave_no_kv_room"
+      ],
+      "id": "0252a998af6f",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "replace-arithmetic-operator",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace available_for_kv < 0 with not available_for_kv < 0",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 949f7e402f7a\n@@ -62,7 +62,7 @@\n         weights_per_rank = weight_bytes / tp\n         kv_per_rank = sum((component.bytes / min(tp, component.tp_parallel_units or cache.kv_parallel_heads) for component in cache.components))\n         available_for_kv = budget - weights_per_rank\n-        if available_for_kv < 0:\n+        if not available_for_kv < 0:\n             sequences = 0\n             verdict = 'weights-oom'\n             reason = 'ideal weight shard exceeds the per-rank planning budget'",
+      "duration_seconds": 1.8080479169875616,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::every_verdict_is_justified_by_its_own_reported_numbers",
+        "laws.py::a_layout_with_room_for_one_sequence_fits",
+        "laws.py::weights_exactly_filling_the_budget_leave_no_kv_room"
+      ],
+      "id": "949f7e402f7a",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace available_for_kv < 0 with available_for_kv <= 0",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant c4130e4ef04a\n@@ -62,7 +62,7 @@\n         weights_per_rank = weight_bytes / tp\n         kv_per_rank = sum((component.bytes / min(tp, component.tp_parallel_units or cache.kv_parallel_heads) for component in cache.components))\n         available_for_kv = budget - weights_per_rank\n-        if available_for_kv < 0:\n+        if available_for_kv <= 0:\n             sequences = 0\n             verdict = 'weights-oom'\n             reason = 'ideal weight shard exceeds the per-rank planning budget'",
+      "duration_seconds": 1.0988783329958096,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::weights_exactly_filling_the_budget_leave_no_kv_room"
+      ],
+      "id": "c4130e4ef04a",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace available_for_kv / kv_per_rank with available_for_kv * kv_per_rank",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant de30fdcd0840\n@@ -67,7 +67,7 @@\n             verdict = 'weights-oom'\n             reason = 'ideal weight shard exceeds the per-rank planning budget'\n         else:\n-            sequences = math.floor(available_for_kv / kv_per_rank) if kv_per_rank else 0\n+            sequences = math.floor(available_for_kv * kv_per_rank) if kv_per_rank else 0\n             verdict = 'fits' if sequences >= 1 else 'context-oom'\n             reason = 'counted weights and full-context state fit before unmodeled runtime overhead' if sequences >= 1 else 'weights fit, but one full-context cache does not'\n         layouts.append(TopologyEstimate(tensor_parallel=tp, data_parallel=dp, budget_per_rank_bytes=budget, weights_per_rank_bytes=weights_per_rank, kv_per_sequence_per_rank_bytes=kv_per_rank, sequences_per_replica=sequences, total_sequences=sequences * dp, verdict=verdict, reason=reason, scale_up_domain_accelerators=scale_up_domain_accelerators, tensor_parallel_domains=domains, cross_domain_tensor_parallel=crosses_domain))",
+      "duration_seconds": 1.418329417007044,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::every_verdict_is_justified_by_its_own_reported_numbers",
+        "laws.py::a_layout_with_room_for_one_sequence_fits"
+      ],
+      "id": "de30fdcd0840",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "replace-arithmetic-operator",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace sequences >= 1 with sequences > 1",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 41679785d50b\n@@ -68,7 +68,7 @@\n             reason = 'ideal weight shard exceeds the per-rank planning budget'\n         else:\n             sequences = math.floor(available_for_kv / kv_per_rank) if kv_per_rank else 0\n-            verdict = 'fits' if sequences >= 1 else 'context-oom'\n+            verdict = 'fits' if sequences > 1 else 'context-oom'\n             reason = 'counted weights and full-context state fit before unmodeled runtime overhead' if sequences >= 1 else 'weights fit, but one full-context cache does not'\n         layouts.append(TopologyEstimate(tensor_parallel=tp, data_parallel=dp, budget_per_rank_bytes=budget, weights_per_rank_bytes=weights_per_rank, kv_per_sequence_per_rank_bytes=kv_per_rank, sequences_per_replica=sequences, total_sequences=sequences * dp, verdict=verdict, reason=reason, scale_up_domain_accelerators=scale_up_domain_accelerators, tensor_parallel_domains=domains, cross_domain_tensor_parallel=crosses_domain))\n     return tuple(layouts)",
+      "duration_seconds": 1.0909300839994103,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::every_verdict_is_justified_by_its_own_reported_numbers",
+        "laws.py::a_layout_with_room_for_one_sequence_fits"
+      ],
+      "id": "41679785d50b",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace sequences >= 1 with sequences > 1",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 492be086a2cf\n@@ -69,7 +69,7 @@\n         else:\n             sequences = math.floor(available_for_kv / kv_per_rank) if kv_per_rank else 0\n             verdict = 'fits' if sequences >= 1 else 'context-oom'\n-            reason = 'counted weights and full-context state fit before unmodeled runtime overhead' if sequences >= 1 else 'weights fit, but one full-context cache does not'\n+            reason = 'counted weights and full-context state fit before unmodeled runtime overhead' if sequences > 1 else 'weights fit, but one full-context cache does not'\n         layouts.append(TopologyEstimate(tensor_parallel=tp, data_parallel=dp, budget_per_rank_bytes=budget, weights_per_rank_bytes=weights_per_rank, kv_per_sequence_per_rank_bytes=kv_per_rank, sequences_per_replica=sequences, total_sequences=sequences * dp, verdict=verdict, reason=reason, scale_up_domain_accelerators=scale_up_domain_accelerators, tensor_parallel_domains=domains, cross_domain_tensor_parallel=crosses_domain))\n     return tuple(layouts)\n ",
+      "duration_seconds": 0.893648209006642,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_layout_with_room_for_one_sequence_fits"
+      ],
+      "id": "492be086a2cf",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace layouts.append(TopologyEstimate(tensor_parallel=tp, data_parallel=dp, budget_per_rank_bytes=budget, weights_per_rank_bytes=weights_per_rank, kv_per_sequence_per_rank_bytes=kv_per_rank, sequences_per_replica=sequences, total_sequences=sequences * dp, verdict=verdict, reason=reason, scale_up_domain_accelerators=scale_up_domain_accelerators, tensor_parallel_domains=domains, cross_domain_tensor_parallel=crosses_domain)) with pass",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant d6ab358e9551\n@@ -70,7 +70,7 @@\n             sequences = math.floor(available_for_kv / kv_per_rank) if kv_per_rank else 0\n             verdict = 'fits' if sequences >= 1 else 'context-oom'\n             reason = 'counted weights and full-context state fit before unmodeled runtime overhead' if sequences >= 1 else 'weights fit, but one full-context cache does not'\n-        layouts.append(TopologyEstimate(tensor_parallel=tp, data_parallel=dp, budget_per_rank_bytes=budget, weights_per_rank_bytes=weights_per_rank, kv_per_sequence_per_rank_bytes=kv_per_rank, sequences_per_replica=sequences, total_sequences=sequences * dp, verdict=verdict, reason=reason, scale_up_domain_accelerators=scale_up_domain_accelerators, tensor_parallel_domains=domains, cross_domain_tensor_parallel=crosses_domain))\n+        pass\n     return tuple(layouts)\n \n def summarize_concurrency(layouts: tuple[TopologyEstimate, ...], *, active_sequences_per_user: int) -> dict[str, Any]:",
+      "duration_seconds": 1.8332779170013964,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::an_explicit_tensor_parallel_size_is_honoured",
+        "laws.py::every_gpu_divisor_is_a_tensor_parallel_candidate",
+        "laws.py::a_layout_with_room_for_one_sequence_fits",
+        "laws.py::weights_exactly_filling_the_budget_leave_no_kv_room"
+      ],
+      "id": "d6ab358e9551",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "skip-call-statement",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "plan_topologies: replace sequences * dp with sequences / dp",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 3c8e3319dbf9\n@@ -70,7 +70,7 @@\n             sequences = math.floor(available_for_kv / kv_per_rank) if kv_per_rank else 0\n             verdict = 'fits' if sequences >= 1 else 'context-oom'\n             reason = 'counted weights and full-context state fit before unmodeled runtime overhead' if sequences >= 1 else 'weights fit, but one full-context cache does not'\n-        layouts.append(TopologyEstimate(tensor_parallel=tp, data_parallel=dp, budget_per_rank_bytes=budget, weights_per_rank_bytes=weights_per_rank, kv_per_sequence_per_rank_bytes=kv_per_rank, sequences_per_replica=sequences, total_sequences=sequences * dp, verdict=verdict, reason=reason, scale_up_domain_accelerators=scale_up_domain_accelerators, tensor_parallel_domains=domains, cross_domain_tensor_parallel=crosses_domain))\n+        layouts.append(TopologyEstimate(tensor_parallel=tp, data_parallel=dp, budget_per_rank_bytes=budget, weights_per_rank_bytes=weights_per_rank, kv_per_sequence_per_rank_bytes=kv_per_rank, sequences_per_replica=sequences, total_sequences=sequences / dp, verdict=verdict, reason=reason, scale_up_domain_accelerators=scale_up_domain_accelerators, tensor_parallel_domains=domains, cross_domain_tensor_parallel=crosses_domain))\n     return tuple(layouts)\n \n def summarize_concurrency(layouts: tuple[TopologyEstimate, ...], *, active_sequences_per_user: int) -> dict[str, Any]:",
+      "duration_seconds": 1.2475085000041872,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::every_layout_partitions_the_gpus_and_conserves_sequences"
+      ],
+      "id": "3c8e3319dbf9",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "replace-arithmetic-operator",
+      "outcome": "killed",
+      "qualname": "plan_topologies",
+      "timed_out": false
+    },
+    {
+      "description": "summarize_concurrency: replace active_sequences_per_user < 1 with not active_sequences_per_user < 1",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant d80d604c639f\n@@ -75,7 +75,7 @@\n \n def summarize_concurrency(layouts: tuple[TopologyEstimate, ...], *, active_sequences_per_user: int) -> dict[str, Any]:\n     \"\"\"Summarize the memory ceiling for one or more active sequences per user.\"\"\"\n-    if active_sequences_per_user < 1:\n+    if not active_sequences_per_user < 1:\n         raise ValueError('active sequences per user must be positive')\n     fitting = [layout for layout in layouts if layout.verdict == 'fits']\n     node_local = [layout for layout in fitting if not layout.cross_domain_tensor_parallel]",
+      "duration_seconds": 1.466949083012878,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::concurrency_divides_active_sequences_by_user"
+      ],
+      "id": "d80d604c639f",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "summarize_concurrency",
+      "timed_out": false
+    },
+    {
+      "description": "summarize_concurrency: replace active_sequences_per_user < 1 with active_sequences_per_user <= 1",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant 311cdab8fe9a\n@@ -75,7 +75,7 @@\n \n def summarize_concurrency(layouts: tuple[TopologyEstimate, ...], *, active_sequences_per_user: int) -> dict[str, Any]:\n     \"\"\"Summarize the memory ceiling for one or more active sequences per user.\"\"\"\n-    if active_sequences_per_user < 1:\n+    if active_sequences_per_user <= 1:\n         raise ValueError('active sequences per user must be positive')\n     fitting = [layout for layout in layouts if layout.verdict == 'fits']\n     node_local = [layout for layout in fitting if not layout.cross_domain_tensor_parallel]",
+      "duration_seconds": 1.5542514580010902,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::concurrency_divides_active_sequences_by_user"
+      ],
+      "id": "311cdab8fe9a",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "killed",
+      "qualname": "summarize_concurrency",
+      "timed_out": false
+    },
+    {
+      "description": "summarize_concurrency.capacity: replace layout is None with not layout is None",
+      "diff": "--- kvfit.planner.py\n+++ kvfit.planner.py mutant cd4c2ec3541e\n@@ -87,7 +87,7 @@\n     recommended = best_local or best_any\n \n     def capacity(layout: TopologyEstimate | None) -> dict[str, Any] | None:\n-        if layout is None:\n+        if not layout is None:\n             return None\n         return {'active_sequences': layout.total_sequences, 'concurrent_users': layout.total_sequences // active_sequences_per_user, 'layout': layout.as_dict()}\n     return {'qualification': 'memory-only', 'definition': 'One concurrent user means the configured number of simultaneously resident full-context sequences. This is a static counted-state upper bound before runtime overhead, not an OOM guarantee or a throughput or latency SLO.', 'active_sequences_per_user': active_sequences_per_user, 'recommended': capacity(recommended), 'best_scale_up_local': capacity(best_local), 'best_any_fabric': capacity(best_any)}",
+      "duration_seconds": 1.0580025000090245,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::concurrency_divides_active_sequences_by_user"
+      ],
+      "id": "cd4c2ec3541e",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "summarize_concurrency.capacity",
+      "timed_out": false
+    }
+  ],
+  "schema": "tlaw.mutation/v1",
+  "stale_equivalence_entries": [],
+  "summary": {
+    "errors": 0,
+    "has_errors": false,
+    "invalid": 0,
+    "killed": 39,
+    "runnable": 40,
+    "statement": "Killed 39 of 40 runnable generated mutations.",
+    "survived": 0,
+    "unresolved_equivalent": 1
+  }
+}

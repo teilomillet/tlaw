@@ -151,24 +151,64 @@ introduced no behavior the probe had not already measured. Reports name the
 boundary shape and dotted module, so a package run is never mistaken for a
 flat one.
 
-Two survivor groups were then closed by laws the probe made possible,
-each vocabulary word paying for itself in measured kills:
+Survivor groups were then closed by laws the probe made possible, each
+vocabulary word paying for itself in measured kills:
 
 | Laws | Killed |
 | --- | --- |
 | original probe laws | 16 of 40 |
 | plus the budget anchored to an external fact | 17 of 40 |
-| plus the explicit tensor-parallel law (`depends` + `one_of`) | **21 of 40** |
+| plus the explicit tensor-parallel law (`depends` + `one_of`) | 21 of 40 |
+| plus `as_dict`, weights/kv sharding, candidate completeness, concurrency | 35 of 40 |
+| plus four boundary laws (`raises`, cross-domain, two `depends`-built) | **39 of 40** |
 
-Every added law is provably load-bearing: the report attributes the budget
-mutant to the anchoring law and four mutants to the explicit-TP law alone.
-The anchoring reasoning is recorded as durable guidance in
-`docs/law-first-experiment.md`; the remaining 19 survivors are now accounted
-for as six uncalled surfaces, six self-consistent or boundary gaps, and seven
-still-unexercised scale-up/default-completeness paths.
+Every added law is provably load-bearing; the report attributes each new
+kill to the law that made it. Two of the last four mutants were only
+reachable by *constructing* the exact input — one sequence exactly fitting
+the budget, and weights exactly filling it — which `depends` expresses by
+deriving the second input from the first, hitting numeric boundaries a
+uniform domain never lands on.
 
-## Not addressed by this probe
+The one remaining mutant is a **proven equivalent**, not a survivor: in the
+candidate filter, `size <= scale_up` versus `size < scale_up` cannot change
+the result, because a second clause `size % scale_up == 0` always keeps
+`size == scale_up`. It carries a committed ledger entry with that proof, so
+the run is 39 killed, 0 unexplained survivors, 1 equivalent, exit 0 — every
+mutant accounted for.
 
-Namespace packages without `__init__.py`, projects whose laws must import
-two packages at once, and compiled or generated modules. Those need their
-own examples before they earn behavior.
+These artifacts are **retained and independently rerunnable** in
+[`probes/kvfit/`](../probes/kvfit/README.md): the 15 laws, the equivalence
+ledger, the recorded `tlaw.mutation/v1` report, and the pinned kvfit revision
+(`f48a6abdef9795028332ae1cf2b74f091929e01c`) with the exact reproduction
+command. The claim is published only because it can be reproduced, which is
+the condition tlaw sets on its own documentation.
+
+## Follow-up: the three deferred cases, probed
+
+The original limitation named three deferred cases. Probing each showed two
+were over-stated and one was a real, bounded gap now closed.
+
+**Two-package laws already worked.** A law that imports two packages while
+one module is mutated needs no new behavior: the mutated package is copied
+and shadowed, and the second package stays installed and unmutated, which
+is correct because only one module is under test. Verified by mutating
+`alpha.core` while the laws also imported `beta`: canary killed, mutant
+killed. Only the rare need to mutate two packages *simultaneously* remains
+unaddressed, and no example asks for it.
+
+**Compiled modules are refused honestly, by construction.** `mutate`
+requires a `.py` implementation; a `.so`/`.pyd` extension fails that check
+with a clear message. A source-level mutation tool cannot mutate compiled
+code — this is a boundary, not a bug, and it is reported rather than
+guessed.
+
+**Namespace packages (PEP 420) were the real gap, now fixed.** Without an
+`__init__.py` chain, the filesystem cannot say whether
+`ns/shapes/geometry.py` is imported as `ns.shapes.geometry`,
+`shapes.geometry`, or `geometry` — it depends on the import path. The
+disambiguating fact is how the laws import the module, which tlaw now reads
+statically (`_dotted_import_name`), matching the dotted tail against the
+module's own path so a coincidental same-named import cannot mislead it.
+The top namespace directory is then copied and shadowed exactly as a
+regular package. A bare, undotted import keeps the flat boundary, and the
+canary still proves the shadow took effect.

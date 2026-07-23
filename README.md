@@ -41,6 +41,12 @@ domains, structural comparison, stateful paths, and mutation evidence:
 - `raises(Expected, function, ...)` states an exception contract whose
   failure names what actually happened instead of returning False;
 - `tlaw check laws.py --explain` runs the laws and reports what it generated;
+- `tlaw check feature/` discovers and checks every law file under a folder;
+- `tlaw check laws.py --search --json failure.json` uses a fresh visible seed
+  to look for new counterexamples and retains exact replay evidence;
+- `tlaw check --replay failure.json` reruns only those retained failures;
+- `tlaw diff origin/main..HEAD` statically separates law changes from the
+  surrounding implementation diff without executing either revision;
 - inferred laws use deterministic runs and show Hypothesis's minimized failing
   input;
 - a passing inferred law is rejected when tlaw detects that it mutated its
@@ -52,10 +58,8 @@ domains, structural comparison, stateful paths, and mutation evidence:
 
 Important pieces are still intentionally absent: domain predicates and nested
 domain positions beyond the implemented `number`, `integer`, `list_of`,
-`one_of`, `depends`, and supported `Annotated` forms; whole-folder checking;
-opt-in third-party pytest plugins; impact graphs; and commands for diffing,
-randomized search, or replay. Documentation that discusses those directions
-does not make them usable syntax.
+`one_of`, `depends`, and supported `Annotated` forms; opt-in third-party
+pytest plugins; and impact graphs.
 
 ## Write a first law
 
@@ -103,6 +107,74 @@ copies generated inputs and rejects a passing bare law when it detects that the
 law mutated one; stateful behavior should use the explicit path interface
 below.
 
+## Make law changes loud
+
+Git remains the acceptance ledger: a committed law is accepted behavior.
+`tlaw diff` makes changes in that behavior visible on their own:
+
+```console
+tlaw diff origin/main..HEAD
+```
+
+```text
+tlaw law-space diff 62ea585dd296..a482e8d8c430
+Law changes:
+- feature/laws.py::result_stays_bounded: domain narrowed
+- feature/laws.py::packing_is_stable: body changed
+Changed laws: 2
+```
+
+The command reads source blobs directly from Git and parses them; it never
+checks out, imports, or executes historical code. A law is identified by its
+module path and function name. Added and removed laws, descriptions, domains,
+generation posture, other decorators, and function bodies are compared as
+parsed Python, so formatting alone is ignored. Adding `@pytest.mark.skip` or
+moving from inferred to explicit generation is therefore visible.
+
+Literal `number`, `integer`, `one_of`, and `list_of` changes are called
+`domain narrowed` or `domain widened` only when subset/superset is provable.
+A dynamic or otherwise incomparable edit is simply `domain changed`. Exit
+code `0` means no law change, `1` means law changes need review, and `2` means
+the Git range or source could not be read honestly. A rename is intentionally
+reported as one removal and one addition.
+
+## Search and replay a counterexample
+
+Normal checks are deterministic. Randomized discovery is an explicit command:
+
+```console
+tlaw check laws.py --search --json failure.json
+```
+
+tlaw prints the chosen seed and stores a `tlaw.check/v1` report containing the
+law identity, Hypothesis version, shrunk generated inputs, exception
+fingerprint, and both values when the law returned `tlaw.same(...)`.
+
+Reproduce only those retained failures with:
+
+```console
+tlaw check --replay failure.json
+```
+
+Replay exits `0` only when every recorded input still produces the same
+exception type and message. It exits `1` when the counterexample no longer
+fails in the recorded way, and `2` when the report or its law identity is
+invalid. An unrelated pytest test in the law file is not run during replay.
+
+To rerun the whole randomized search rather than only its shrunk result, reuse
+the displayed seed:
+
+```console
+tlaw check laws.py --search --seed 424242
+```
+
+Typed replay encoding currently supports `None`, booleans, integers, floats,
+strings, bytes, lists, tuples, dictionaries, sets, and frozensets, recursively.
+If a failing input cannot be encoded without guessing, tlaw reports invalid
+evidence and does not write the requested report. Inputs are frozen before
+the law call, so a mutation-guard failure replays from the value that was
+actually generated, not the value after the law changed it.
+
 ## State a narrower domain and comparison
 
 When a plain type is broader than the application's real inputs, name the
@@ -141,8 +213,9 @@ enforces the domain; see
 [current tlaw behavior](https://github.com/teilomillet/tlaw/blob/main/docs/current-behavior.md#visible-input-domains).
 `Annotated` metadata other than exactly one tlaw domain, and domains in
 positions tlaw cannot generate from yet, are rejected rather than silently
-ignored. tlaw does not yet verify that the base type and attached domain agree,
-so the author must keep them consistent.
+ignored. A base type that contradicts its domain — `Annotated[str,
+tlaw.number(0, 1)]` — is refused too, so the visible contract cannot claim a
+type the domain never produces.
 
 The complete runnable version is in the
 [rewards example](https://github.com/teilomillet/tlaw/blob/main/examples/rewards/README.md).
@@ -170,7 +243,8 @@ tlaw check path/to/feature/laws.py --explain
 
 This repository enforces itself with one visible gate, `scripts/gate`: the
 committed dependency lock, ruff, the full property suite, and `tlaw check`
-plus `tlaw mutate` on the flat examples — the repo dogfoods its own strength
+on the whole `examples/` folder plus `tlaw mutate` on the flat examples — the
+repo dogfoods its own strength
 meter on every push. CI pins uv and runs the gate on every push and pull
 request (`.github/workflows/ci.yml`), and the same file runs locally before
 each push once the hook is installed:

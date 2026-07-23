@@ -6,12 +6,10 @@ Implemented now: deterministic inferred generation, minimized failures in check
 output, third-party pytest plugin isolation, `tlaw check --explain`, visible
 `number`/`integer`/`one_of`/`list_of`/`depends` domains, retained `same`
 comparisons with absolute and relative tolerance, declared audits, generated
-mutation evidence for flat modules and regular packages, and one shared local
-and CI gate.
-
-Still proposed: `tlaw diff`, randomized `--search`, retained replay reports,
-and `--replay`. Each proposed mechanism must survive a real probe before it
-earns syntax.
+mutation evidence for flat modules, regular packages, and namespace packages,
+and one shared local and CI gate. Static `tlaw diff`, randomized `--search`, stable
+`tlaw.check/v1` reports, repeatable `--seed`, and exact `--replay` are also
+implemented and probed.
 
 ## The rule both parts follow
 
@@ -57,6 +55,7 @@ A law's identity is its module path plus function name. A law's meaning is:
 
 - its description (the function name);
 - its input domain (annotations or explicit domains); and
+- its generation posture and enforcement decorators;
 - its comparison (the function body).
 
 The report classifies each law as one of:
@@ -65,6 +64,8 @@ The report classifies each law as one of:
 - **domain narrowed**, **domain widened**, or **domain changed** — bounds are
   compared only when both sides are literal and comparable; anything else is
   reported as changed without classification, never guessed; or
+- **generation changed** or **decorators changed** — the way inputs are
+  generated or the way the law is collected changed;
 - **body changed** — the comparison itself differs.
 
 Formatting-only edits are not meaning changes; the comparison works on parsed
@@ -75,6 +76,22 @@ structure, not text.
 `tlaw diff` parses law files from both revisions as source. It never imports
 or executes code from a checked-out historical revision. A tool whose job is
 review safety must not run the code under review.
+
+The implementation reads blobs with `git cat-file`, recognizes decorators
+imported from `tlaw` or `tlaw.authoring`, and compares parsed ASTs. Simple
+module-level domain aliases are expanded. Literal numeric, finite-choice, and
+list domains are classified only when subset/superset is provable; dependent
+or dynamic expressions are `domain changed`. Helpers and module globals are
+not chased; their changes remain visible in the ordinary Git diff, and a
+readable law should keep its contract meaning in its own body.
+
+The real-history probe now exists. Running
+`tlaw diff 62ea585..a482e8d` over tlaw's seven committed feature/release
+commits reported 24 added laws across the worked examples and no
+implementation files. Separate temporary-repository probes pin literal
+narrowing/widening, conservative dynamic-domain changes, formatting immunity,
+generation-posture changes, skip decorators, combined law/implementation
+commits, and a top-level historical side effect that must never execute.
 
 ### CI wiring
 
@@ -102,7 +119,8 @@ review safety must not run the code under review.
 ### Verdict vocabulary
 
 This subsection is a design target, not current `tlaw check` output. Today,
-`check` reports pytest pass or failure for one selected law file; tlaw does not
+`check` reports pytest pass or failure for one selected law file, or lists the
+verdict for every law file discovered under a selected folder. tlaw does not
 yet enumerate code with no laws and therefore cannot report project-wide
 `unknown` behavior.
 
@@ -145,6 +163,20 @@ A failure report retains everything needed to reproduce it elsewhere:
 counterexample that cannot be replayed on another machine does not count as
 evidence.
 
+The implemented `tlaw.check/v1` report stores typed generated inputs and an
+exception type/message fingerprint. Hypothesis marks its final rerun of each
+minimal failure; tlaw freezes that rerun's inputs before calling the law,
+captures only those reruns, and keeps distinct failure origins from one law.
+Replay collects only recorded law identities and succeeds only when every
+exact input raises the same failure. Unsupported input types, missing law
+identities, or malformed reports are invalid evidence, not partial success.
+
+The replay probes retain a seed-shrunk `value=10`, reproduce it from a second
+checkout path, keep two distinct exception origins from one law, replay an
+input-mutation failure from the original non-empty list, ignore an unrelated
+failing pytest test, and turn a missing retained law or unsupported `complex`
+input into invalid evidence.
+
 ### Implemented layers of falsification
 
 1. `tlaw check` attempts to falsify the implementation against the laws.
@@ -162,19 +194,30 @@ it never turns that count into correctness or coverage.
 ### Current usable CI commands
 
 This repository runs `./scripts/gate` locally before a push and in the tracked
-GitHub workflow. Other repositories can use the same explicit commands:
+GitHub workflow. A separate `Review law changes` job writes `tlaw diff` output
+to its own job summary and emits a visible warning when changes exist; a
+change is reviewable rather than automatically forbidden. Other repositories
+can use the same explicit commands:
 
 - every push: `tlaw check path/to/laws.py --explain`;
+- every review: `tlaw diff origin/main..HEAD`;
+- scheduled discovery:
+  `tlaw check path/to/laws.py --search --json failure.json`;
+- reproduce a discovery: `tlaw check --replay failure.json`;
 - when declared audit evidence matters: `tlaw audit path/to/audit.py`; and
-- when one flat or regular-package implementation boundary matters:
+- when one flat, regular-package, or namespace-package implementation boundary
+  matters:
   `tlaw mutate path/to/laws.py path/to/implementation.py`.
 
-### Proposed future CI recipe
+### Available policy recipe
 
 - every push: `tlaw check` (deterministic);
 - law meaning changed (per `tlaw diff`): `tlaw audit` required before merge;
 - scheduled: `tlaw check --search`, seed recorded, discoveries filed with
   their replay data.
+
+All commands in that recipe exist. Whether a law change blocks a merge and
+which audit must accompany it remain repository policy, not hidden tlaw state.
 
 ## Acceptance criteria
 
@@ -193,13 +236,19 @@ This design is an improvement only if all of the following hold:
    another; and
 7. a `--search` discovery replays from its recorded seed.
 
+Criteria 1–4, 6, and 7 are covered by executable probes. Criterion 5 remains
+partial: one selected law file reports its pytest law count and `--explain`
+scope, while folder mode lists every discovered law file and verdict. tlaw
+still does not enumerate project-wide code with no laws and therefore does not
+yet emit an `unknown` map.
+
 ## Deliberately unresolved
 
 - What "unknown" enumerates beyond the checked files — a boundary map of the
   project is a later derived view, and a wrong one would overclaim in the
   other direction.
-- Rename detection — a future `tlaw diff` may initially report a renamed law as
-  removed plus added, which would be honest but noisy.
+- Rename detection — current `tlaw diff` reports a renamed law as removed plus
+  added, which is honest but noisy.
 - Whether a body change whose behavior is provably identical can ever be
   classified as such — likely not without execution, so likely never.
 - Report signing or attestation for evidence that crosses trust domains.

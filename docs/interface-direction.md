@@ -48,9 +48,11 @@ The development order is:
 1. keep the executable authoring form small — implemented;
 2. make generated inputs and comparison semantics visible — implemented for
    `--explain`, `number`, `integer`, `one_of`, `list_of`, `depends`, and
-   absolute/relative `same`; retained replay reports remain open;
-3. challenge accepted laws with generated mutations — flat modules and regular
-   package boundaries are implemented; and only then
+   absolute/relative `same`; randomized search, retained reports, and exact
+   replay are implemented;
+3. challenge accepted laws with generated mutations — flat modules, regular
+   package boundaries, and namespace-package boundaries are implemented; and
+   only then
 4. build derived project-wide views whose displayed confidence comes from that
    evidence — not implemented.
 
@@ -101,9 +103,10 @@ external state. Explicit stateful laws remain necessary for those cases.
 
 Bare laws use a fixed example budget with deterministic generation and no local
 example database. Their minimized failing input is part of the check output.
-Reproduction still requires the same law, implementation, and relevant tool
-versions; `--explain` reports the Hypothesis version rather than implying
-cross-version identity.
+`tlaw check --json` retains typed inputs and the Hypothesis version;
+`tlaw check --replay REPORT` executes only those exact counterexamples and
+requires the same failure fingerprint. `--search` chooses and prints a random
+seed, while `--search --seed N` repeats that discovery sequence.
 
 ## Implemented escalation when types and `==` are insufficient
 
@@ -152,9 +155,11 @@ def rewards_stay_bounded(rewards: list[Reward]):
 
 Exactly one domain per `Annotated` value is enforced; foreign metadata, and
 domains in positions tlaw cannot generate from yet, are rejected at
-decoration time rather than silently erased. tlaw does not yet verify that the
-base type and domain produce the same kind of value, and `--explain` does not
-expand domain bounds hidden behind a PEP 695 alias.
+decoration time rather than silently erased. tlaw refuses a base type and
+domain that it can prove disagree; when Python does not expose enough runtime
+type information to prove the relationship, tlaw leaves it unproven rather
+than guessing. `--explain` expands supported PEP 695 aliases so the generated
+domain remains visible.
 
 ## Interface budget
 
@@ -248,13 +253,16 @@ blocks them.
 ## What remains deliberately unresolved
 
 Since this document was first written, several items have earned syntax from
-real probes: generated mutations for flat modules and regular packages (`tlaw
-mutate`, documented in [generated mutation evidence](mutation-evidence.md));
-numeric, integer, finite-choice, list, and dependent domains; explicit
-exception contracts; and tolerant nested comparison including array shapes
-(`tlaw.same(left, right, within=..., relative=...)`). A checker-clean
-`Annotated[type, domain]` form is also implemented, including PEP 695 aliases
-and `list[...]`; unrelated or mixed metadata is rejected rather than ignored.
+real probes: generated mutations for flat modules, regular packages, and
+namespace packages (`tlaw mutate`, documented in
+[generated mutation evidence](mutation-evidence.md)); numeric, integer,
+finite-choice, list, and dependent domains; explicit exception contracts; and
+tolerant nested comparison including array shapes (`tlaw.same(left, right,
+within=..., relative=...)`). A checker-clean `Annotated[type, domain]` form is
+also implemented, including PEP 695 aliases and `list[...]`; unrelated or
+mixed metadata is rejected rather than ignored. Proven base/domain mismatches
+are refused, alias bounds are expanded in `--explain`, and `tlaw check` can
+discover law files under a folder.
 
 The remaining interface is not settled for:
 
@@ -264,12 +272,9 @@ The remaining interface is not settled for:
   dependencies;
 - domains nested inside dictionaries, tuples, custom classes, or other
   unsupported positions;
-- validation that an `Annotated` base type agrees with its domain, and expanded
-  `--explain` output for aliased domains;
 - configurable NaN equality;
 - opt-in third-party pytest plugins;
 - existing pipelines whose steps are not explicitly composed in tlaw;
-- whole-folder law discovery;
 - project-wide impact analysis and contract conflicts.
 
 Those cases should be designed from real code one at a time. They must not add

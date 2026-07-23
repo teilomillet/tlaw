@@ -1,0 +1,9 @@
+version = 1
+
+# `size <= scale_up` versus `size < scale_up` in the candidate filter is a
+# genuine equivalent: the second clause `size % scale_up == 0` always keeps
+# size == scale_up (a number is divisible by itself), so tightening the
+# first comparison never changes the candidate set. Proven by reading the
+# filter, not by failing to find a counterexample.
+[equivalent.617903f6c6bb]
+reason = "size == scale_up is always kept by the size % scale_up == 0 clause"

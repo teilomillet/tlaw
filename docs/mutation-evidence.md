@@ -119,22 +119,24 @@ Three properties keep the ledger from becoming the new way to game the score:
   invalid, errored, or does not exist is reported as stale instead of being
   silently honored or dropped, and unresolved equivalents never leave the
   report or the runnable denominator; and
-- changes to this file belong in the same review scope as law changes — a
-  future `tlaw diff` must surface them the way it surfaces a narrowed
-  domain.
+- changes to this file belong in the same review scope as law changes.
+  Current `tlaw diff` covers executable law functions only; surfacing an
+  equivalence-ledger edit beside them remains an explicit limitation.
 
 ## Current mutation boundary
 
 The implemented command accepts one `laws.py` and one different implementation
 module. For a flat module, both files share a directory and tlaw copies that
-whole directory. For a module inside a regular package, the laws may live
-anywhere: tlaw copies the whole package, runs from a neutral directory, and
-places the copy before both the laws directory and installed package on the
-import path. The mandatory canary proves that shadowing worked before mutants
-are scored. Every baseline, mutant, and kill replay gets a fresh copy. Mutation
-is limited to Python function and method bodies, including nested functions and
-methods; namespace packages, compiled modules, and multi-package boundaries are
-not implemented.
+whole directory. For a module inside a regular or namespace package, the laws
+may live anywhere: tlaw copies the whole package boundary, runs from a neutral
+directory, and places the copy before both the laws directory and installed
+package on the import path. The namespace boundary comes from the dotted import
+in the laws, including when a regular child package sits under a namespace
+parent. The mandatory canary proves that shadowing worked before mutants are
+scored. Every baseline, mutant, and kill replay gets a fresh copy. Mutation is
+limited to Python function and method bodies, including nested functions and
+methods; compiled modules and mutating more than one package in the same run
+are not implemented. Laws may still import other, unmutated packages normally.
 
 The current deterministic single-site operators are:
 
