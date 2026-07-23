@@ -22,9 +22,9 @@ uv run towncrier build --draft >/dev/null
 uv run ruff check .
 uv run ruff format --check .
 uv run pytest -q
-uv run tlaw check examples/batch_packer/laws.py
-uv run tlaw check examples/score_weights/laws.py
-uv run tlaw check examples/rescale/laws.py
+# Folder discovery checks every example's laws in one command, which also
+# dogfoods `tlaw check <folder>` on every push.
+uv run tlaw check examples/
 uv run tlaw mutate examples/batch_packer/laws.py \
     examples/batch_packer/implementation.py
 uv run tlaw mutate examples/score_weights/laws.py \

@@ -23,7 +23,7 @@ from typing import (
     overload,
 )
 
-from hypothesis import given, settings
+from hypothesis import given, seed as hypothesis_seed, settings
 from hypothesis import strategies as st
 from hypothesis.strategies import SearchStrategy
 
@@ -32,6 +32,16 @@ from .category import Arrow, arrow, identity
 from .comparison import Comparison
 from .domains import DependentDomain, Domain, generation_order
 from .refusal import Refusal
+from .replay import (
+    MODE_ENV,
+    REPLAY_ENV,
+    SEED_ENV,
+    capture_failure,
+    decoded_arguments,
+    exception_evidence,
+    prepare_failure_inputs,
+    replay_failures,
+)
 from .target import load_target
 
 
@@ -614,46 +624,109 @@ def _decorate_law(
     strategies: dict[str, SearchStrategy[Any] | Domain | DependentDomain] | None,
 ) -> Callable[[], None]:
     inferred = strategies is None
+    search = os.environ.get(MODE_ENV) == "search"
+    if search:
+        generation = (
+            "search-seeded-inferred" if inferred else "search-seeded-explicit-settings"
+        )
+    else:
+        generation = "inferred-deterministic" if inferred else "explicit-settings"
 
     @wraps(function)
     def check(*args: Any, **kwargs: Any) -> None:
-        current: dict[str, Any] = {}
+        current = dict(inspect.signature(function).bind(*args, **kwargs).arguments)
+        prepared_inputs = prepare_failure_inputs(current)
         snapshots: dict[str, Any] = {}
-        if inferred:
-            current, snapshots = _snapshot_generated_inputs(
+        comparison: Comparison | None = None
+        try:
+            if inferred:
+                current, snapshots = _snapshot_generated_inputs(
+                    function,
+                    args,
+                    kwargs,
+                    description=description,
+                )
+
+            result = function(*args, **kwargs)
+            if isinstance(result, Equation):
+                result.check(description)
+            elif isinstance(result, Comparison):
+                # tlaw owns this comparison, so the failure can show both
+                # sides and the first difference instead of a bare False.
+                comparison = result
+                result.check(description)
+            elif isinstance(result, Refusal):
+                # tlaw performed this call, so the failure can say whether
+                # the wrong exception was raised or a value came back.
+                result.check(description)
+            elif result is False:
+                raise AssertionError(f"law failed: {description}")
+            elif result is not True and result is not None:
+                result_type = f"{type(result).__module__}.{type(result).__qualname__}"
+                raise TypeError(
+                    f"law '{description}' returned {result_type}, not one Python "
+                    "boolean; some libraries return one value per element, so tlaw "
+                    "cannot unambiguously decide whether the law passed"
+                )
+
+            if inferred:
+                _ensure_generated_inputs_unchanged(
+                    current,
+                    snapshots,
+                    description=description,
+                )
+        except Exception as error:
+            capture_failure(
                 function,
-                args,
-                kwargs,
                 description=description,
+                generation=generation,
+                arguments=current,
+                prepared_inputs=prepared_inputs,
+                error=error,
+                comparison=comparison,
             )
+            raise
 
-        result = function(*args, **kwargs)
-        if isinstance(result, Equation):
-            result.check(description)
-        elif isinstance(result, Comparison):
-            # tlaw owns this comparison, so the failure can show both
-            # sides and the first difference instead of a bare False.
-            result.check(description)
-        elif isinstance(result, Refusal):
-            # tlaw performed this call, so the failure can say whether
-            # the wrong exception was raised or a value came back.
-            result.check(description)
-        elif result is False:
-            raise AssertionError(f"law failed: {description}")
-        elif result is not True and result is not None:
-            result_type = f"{type(result).__module__}.{type(result).__qualname__}"
-            raise TypeError(
-                f"law '{description}' returned {result_type}, not one Python "
-                "boolean; some libraries return one value per element, so tlaw "
-                "cannot unambiguously decide whether the law passed"
-            )
+    if os.environ.get(REPLAY_ENV):
+        failures = replay_failures(function)
+        if not failures:
+            # Replay means exactly the retained failures, not every law or
+            # ordinary pytest test that happens to share the file.
+            def ignored() -> None:
+                return None
 
-        if inferred:
-            _ensure_generated_inputs_unchanged(
-                current,
-                snapshots,
-                description=description,
-            )
+            ignored.__name__ = function.__name__
+            ignored.__test__ = False
+            return ignored
+
+        def replay_test() -> None:
+            for index, failure in enumerate(failures, start=1):
+                label = (
+                    "retained counterexample"
+                    if len(failures) == 1
+                    else f"retained counterexample {index}"
+                )
+                positional, keywords = decoded_arguments(function, failure)
+                expected = failure["exception"]
+                try:
+                    check(*positional, **keywords)
+                except Exception as error:
+                    actual = exception_evidence(error)
+                    if actual == expected:
+                        continue
+                    raise AssertionError(
+                        f"{label} changed its failure:\n"
+                        f"  expected {expected['type']}: {expected['message']}\n"
+                        f"  observed {actual['type']}: {actual['message']}"
+                    ) from error
+                raise AssertionError(f"{label} no longer fails")
+
+        replay_test.__name__ = function.__name__
+        replay_test.__doc__ = function.__doc__
+        replay_test.__test__ = True
+        replay_test.__tlaw_description__ = description
+        replay_test.__tlaw_replay_identity__ = failures[0]["identity"]
+        return replay_test
 
     if inferred:
         resolved = _domain_strategies(function, description=description)
@@ -667,7 +740,7 @@ def _decorate_law(
             hypothesis_test = given(**resolved)(check)
         hypothesis_test = settings(
             database=None,
-            derandomize=True,
+            derandomize=not search,
             max_examples=INFERRED_MAX_EXAMPLES,
         )(hypothesis_test)
         inputs = _annotation_text(function)
@@ -686,11 +759,16 @@ def _decorate_law(
                 for name, value in strategies.items()
             }
         )(check)
+    if search:
+        seed = os.environ.get(SEED_ENV)
+        if seed is None:
+            raise RuntimeError("tlaw search has no seed")
+        hypothesis_test = hypothesis_seed(int(seed))(hypothesis_test)
     hypothesis_test.__test__ = True
     hypothesis_test.__tlaw_description__ = description
     hypothesis_test.__tlaw_inputs__ = inputs
     hypothesis_test.__tlaw_max_examples__ = INFERRED_MAX_EXAMPLES if inferred else None
-    hypothesis_test.__tlaw_deterministic__ = inferred
+    hypothesis_test.__tlaw_deterministic__ = inferred and not search
     return hypothesis_test
 
 

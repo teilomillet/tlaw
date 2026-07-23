@@ -38,6 +38,8 @@ def test_the_authoring_vocabulary_is_present() -> None:
         "one_of",
         "depends",
         "check",
+        "diff",
+        "replay",
         "audit",
         "mutate",
     ):

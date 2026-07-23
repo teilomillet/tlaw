@@ -12,7 +12,14 @@ from .audit import (
     audit_manifest,
 )
 from .authoring import Equation, Path, System, law, system
-from .check import CheckResult, check
+from .check import (
+    CheckResult,
+    FolderCheckResult,
+    check,
+    check_folder,
+    discover_law_files,
+    replay,
+)
 from .comparison import Comparison, same
 from .domains import (
     DependentDomain,
@@ -23,6 +30,7 @@ from .domains import (
     number,
     one_of,
 )
+from .law_diff import LawChange, LawDiffResult, diff
 from .refusal import Refusal, raises
 from .mutation import (
     CanaryRun,
@@ -48,7 +56,10 @@ __all__ = [
     "Domain",
     "EnforcementError",
     "Equation",
+    "FolderCheckResult",
     "KnownWrongOutcome",
+    "LawChange",
+    "LawDiffResult",
     "ManifestError",
     "MutantRun",
     "Mutation",
@@ -59,7 +70,10 @@ __all__ = [
     "System",
     "audit",
     "check",
+    "check_folder",
     "depends",
+    "diff",
+    "discover_law_files",
     "integer",
     "law",
     "list_of",
@@ -67,6 +81,7 @@ __all__ = [
     "number",
     "one_of",
     "raises",
+    "replay",
     "same",
     "system",
 ]

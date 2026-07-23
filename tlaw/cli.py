@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from tlaw import ManifestError, audit, check, mutate
+from tlaw import ManifestError, audit, check, check_folder, diff, mutate, replay
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -14,12 +14,51 @@ def _parser() -> argparse.ArgumentParser:
         description="Write and enforce executable behavioral laws for Python code.",
     )
     subcommands = parser.add_subparsers(dest="command", required=True)
-    check = subcommands.add_parser("check", help="run one human-authored laws.py file")
-    check.add_argument("law_file", type=Path)
+    check = subcommands.add_parser(
+        "check", help="run one law file, or every law file under a folder"
+    )
+    check.add_argument(
+        "law_file",
+        nargs="?",
+        type=Path,
+        metavar="LAW_FILE_OR_FOLDER",
+    )
     check.add_argument(
         "--explain",
         action="store_true",
         help="show how inferred inputs are generated",
+    )
+    check_mode = check.add_mutually_exclusive_group()
+    check_mode.add_argument(
+        "--search",
+        action="store_true",
+        help="use a fresh recorded seed to search for new counterexamples",
+    )
+    check_mode.add_argument(
+        "--replay",
+        type=Path,
+        metavar="REPORT",
+        help="rerun exactly the failures retained in a check report",
+    )
+    check.add_argument(
+        "--seed",
+        type=int,
+        help="reuse a recorded non-negative seed with --search",
+    )
+    check.add_argument(
+        "--json",
+        dest="json_path",
+        type=Path,
+        help="write a replayable tlaw.check/v1 evidence report",
+    )
+    law_diff = subcommands.add_parser(
+        "diff",
+        help="show static law changes between two Git revisions",
+    )
+    law_diff.add_argument(
+        "revisions",
+        metavar="BASE..HEAD",
+        help="two-dot Git revision range to compare",
     )
     audit = subcommands.add_parser(
         "audit", help="audit one laws.py file or legacy TOML manifest"
@@ -51,15 +90,102 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _write_report(path: Path, contents: str) -> None:
+    try:
+        path.write_text(contents, encoding="utf-8")
+    except OSError as error:
+        raise ManifestError(f"could not write JSON report {path}: {error}") from error
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if args.command == "check":
+    if args.command == "diff":
         try:
-            result = check(args.law_file, explain=args.explain)
+            result = diff(args.revisions)
+        except ManifestError as error:
+            print(f"tlaw: {error}", file=sys.stderr)
+            return 2
+        print(result.render_text())
+        return result.exit_code
+
+    if args.command == "check":
+        if args.law_file is not None and args.law_file.is_dir():
+            # Folder mode discovers and runs every law file; the per-file
+            # evidence flags do not apply, so they are refused rather than
+            # silently ignored.
+            per_file = []
+            if args.search:
+                per_file.append("--search")
+            if args.replay is not None:
+                per_file.append("--replay")
+            if args.json_path is not None:
+                per_file.append("--json")
+            if args.seed is not None:
+                per_file.append("--seed")
+            if per_file:
+                print(
+                    "tlaw: checking a folder does not support "
+                    f"{', '.join(per_file)}; those retain per-file evidence",
+                    file=sys.stderr,
+                )
+                return 2
+            try:
+                folder = check_folder(args.law_file, explain=args.explain)
+            except ManifestError as error:
+                print(f"tlaw: {error}", file=sys.stderr)
+                return 2
+            print(folder.output, end="")
+            return folder.exit_code
+        try:
+            if args.replay is not None:
+                if args.law_file is not None:
+                    raise ManifestError(
+                        "check --replay reads its law path from REPORT; "
+                        "do not also pass a law file"
+                    )
+                if args.explain:
+                    raise ManifestError(
+                        "check --replay cannot be combined with --explain"
+                    )
+                if args.json_path is not None:
+                    raise ManifestError("check --replay cannot be combined with --json")
+                if args.seed is not None:
+                    raise ManifestError("check --replay cannot be combined with --seed")
+                result = replay(args.replay)
+            else:
+                if args.law_file is None:
+                    raise ManifestError("check needs a law file or --replay REPORT")
+                if args.seed is not None and not args.search:
+                    raise ManifestError("check --seed requires --search")
+                if args.seed is not None and args.seed < 0:
+                    raise ManifestError("check --seed must be non-negative")
+                result = check(
+                    args.law_file,
+                    explain=args.explain,
+                    search=args.search,
+                    seed=args.seed,
+                )
         except ManifestError as error:
             print(f"tlaw: {error}", file=sys.stderr)
             return 2
         print(result.output, end="" if result.output.endswith("\n") else "\n")
+        if args.json_path is not None:
+            if result.report["summary"]["status"] == "invalid":
+                print(
+                    "tlaw: JSON not written because the evidence is not replayable",
+                    file=sys.stderr,
+                )
+            else:
+                try:
+                    _write_report(args.json_path, result.to_json())
+                except ManifestError as error:
+                    print(f"tlaw: {error}", file=sys.stderr)
+                    return 2
+                print(f"JSON: {args.json_path}")
+                if result.report["failures"]:
+                    print(f"Replay: tlaw check --replay {args.json_path}")
+        elif args.search and result.report["failures"]:
+            print("Retain this counterexample with --json REPORT for --replay.")
         return result.exit_code
 
     if args.command == "mutate":

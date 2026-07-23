@@ -14,6 +14,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  law-diff:
+    name: Review law changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the complete history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.30"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Put law changes in their own review summary
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set +e
+          report=$(uv run tlaw diff "$BASE..$HEAD" 2>&1)
+          status=$?
+          set -e
+
+          printf '%s\n' "$report"
+          {
+            echo "## tlaw law-space diff"
+            echo
+            echo '```text'
+            printf '%s\n' "$report"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          case "$status" in
+            0)
+              echo "::notice title=tlaw law review::No law changes."
+              ;;
+            1)
+              echo "::warning title=tlaw law review::Law changes require review; open this job's summary."
+              ;;
+            *)
+              echo "::error title=tlaw law review::tlaw diff could not produce trustworthy evidence."
+              exit "$status"
+              ;;
+          esac
+
   gate:
     name: Run the push gate
     runs-on: ubuntu-latest
