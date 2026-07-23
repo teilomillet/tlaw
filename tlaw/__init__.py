@@ -5,7 +5,8 @@ one below cannot say what you mean. Most laws never leave the first rung.
 
 Stating a law — what the function returns:
 
-1. ``return a == b`` — a plain boolean. The whole first law is this.
+1. ``@tlaw.law`` with ``return a == b`` — a plain boolean. The whole first
+   law is this.
 2. ``same(a, b, within=, relative=)`` — when ``==`` is the wrong test:
    floats, arrays, nested values, or a tolerance. Keeps both sides and the
    first difference on failure.
@@ -36,8 +37,8 @@ Getting evidence — a separate axis, ordered by how hard the laws are tried:
 3. ``tlaw diff`` — did a commit change what a law *means*?
 4. ``tlaw audit`` — do the laws reject declared-wrong implementations?
 
-Each name has its own module docstring with the why; this is the map of when
-to reach for which.
+Each public callable has its own docstring with the why; this is the map of
+when to reach for which.
 """
 
 from __future__ import annotations

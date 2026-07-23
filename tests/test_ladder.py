@@ -9,10 +9,27 @@ explicitly exempted non-rung, and every exemption must still exist.
 
 from __future__ import annotations
 
-import re
-
 import tlaw
 
+
+LADDER_TOKENS = {
+    "audit": "``tlaw audit``",
+    "check": "``tlaw check``",
+    "depends": "``depends(",
+    "diff": "``tlaw diff``",
+    "excludes": "``excludes(",
+    "integer": "``integer(",
+    "law": "``@tlaw.law``",
+    "list_of": "``list_of(",
+    "mutate": "``tlaw mutate``",
+    "number": "``number(",
+    "one_of": "``one_of(",
+    "raises": "``raises(",
+    "record": "``record(",
+    "returns": "``returns(",
+    "same": "``same(",
+    "system": "``system``",
+}
 
 # Public names that are deliberately NOT ladder rungs. The ladder teaches
 # which verb to reach for; these are the values those verbs return, the
@@ -52,42 +69,22 @@ NOT_LADDER_RUNGS = {
 }
 
 
-def _mentions(name: str, text: str) -> bool:
-    return re.search(rf"\b{re.escape(name)}\b", text) is not None
-
-
 def test_every_public_name_is_a_ladder_rung_or_explicitly_exempt() -> None:
-    ladder = tlaw.__doc__ or ""
-    for name in tlaw.__all__:
-        if name in NOT_LADDER_RUNGS:
-            continue
-        assert _mentions(name, ladder), (
-            f"{name!r} is public vocabulary but is missing from the ladder in "
-            "tlaw/__init__.py's module docstring. Put it on the ladder as a "
-            "rung, or add it to NOT_LADDER_RUNGS with a reason if it is a "
-            "type, error, or mode rather than a verb to reach for."
-        )
+    public = set(tlaw.__all__)
+    rungs = set(LADDER_TOKENS)
 
-
-def test_no_exemption_names_a_dropped_export() -> None:
-    exported = set(tlaw.__all__)
-    for name in NOT_LADDER_RUNGS:
-        assert name in exported, (
-            f"{name!r} is exempted from the ladder but is no longer exported; "
-            "remove it from NOT_LADDER_RUNGS so the exemption list stays honest."
-        )
-
-
-def test_the_ladder_and_the_exemptions_together_cover_the_surface() -> None:
-    # Every export is exactly one of: a ladder rung, or a declared non-rung.
-    # No export may be silently unaccounted for in either place.
-    ladder = tlaw.__doc__ or ""
-    unaccounted = [
-        name
-        for name in tlaw.__all__
-        if name not in NOT_LADDER_RUNGS and not _mentions(name, ladder)
-    ]
-    assert not unaccounted, (
-        "these exports are neither a ladder rung nor a declared non-rung: "
-        f"{unaccounted}"
+    assert rungs.isdisjoint(NOT_LADDER_RUNGS)
+    assert rungs | NOT_LADDER_RUNGS == public, (
+        "every public name must be exactly one of a ladder rung or an explicit "
+        f"non-rung; missing={public - rungs - NOT_LADDER_RUNGS}, "
+        f"stale={(rungs | NOT_LADDER_RUNGS) - public}"
     )
+
+
+def test_every_ladder_rung_has_an_explicit_api_token() -> None:
+    ladder = tlaw.__doc__ or ""
+    for name, token in LADDER_TOKENS.items():
+        assert token in ladder, (
+            f"{name!r} is classified as a ladder rung but its explicit API "
+            f"token {token!r} is missing from tlaw's module docstring"
+        )
