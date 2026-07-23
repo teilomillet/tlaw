@@ -111,13 +111,14 @@ duplicate, over-long, or unsupported selections (every generated field is a
 valid supported `text` kind), and profile consistency (the injected
 resolvers always return a well-formed profile matching the key).
 
-Adding Law 6 moved this from 26/72 to 34/72, and 9 of the 8-mutant gain
-lands inside `_checks`, which the first five laws could not reach at all.
-It also **cost** one kill: raising `max_checks` from `0` to `2` means no
-generated request now sits exactly on the check limit, so the
-`total_checks > max_checks` boundary mutant survives where it previously
-died. A declared domain decides what a law can observe, in both directions,
-and the report is left to say so rather than being tuned to look better.
+Adding Law 6 created nine new kills inside `_checks`, which the first five laws
+could not reach at all. It also **cost** one kill: raising `max_checks` from
+`0` to `2` means no generated request now sits exactly on the check limit, so
+the `total_checks > max_checks` boundary mutant survives where it previously
+died. Nine new kills minus that lost kill moved the result from 26/72 to 34/72,
+a net gain of eight. A declared domain decides what a law can observe, in both
+directions, and the report is left to say so rather than being tuned to look
+better.
 
 That is the intended reading of a mutation report: it counts the generated
 challenges these laws answered, and nothing else.
