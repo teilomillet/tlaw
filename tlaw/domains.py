@@ -68,6 +68,11 @@ class Domain:
 
     description: str
     strategy: SearchStrategy[Any] = field(repr=False)
+    # The concrete Python types this domain generates, so an
+    # ``Annotated[base, domain]`` whose base type contradicts them can be
+    # refused instead of silently believed. Empty means "not declared",
+    # and no check is made — tlaw never guesses a mismatch it cannot prove.
+    generates: tuple[type, ...] = field(default=(), repr=False)
 
     def __repr__(self) -> str:
         return self.description
@@ -219,6 +224,7 @@ def number(low: int | float, high: int | float) -> Domain:
             allow_nan=False,
             allow_infinity=False,
         ),
+        generates=(float,),
     )
 
 
@@ -240,6 +246,7 @@ def integer(low: int, high: int) -> Domain:
     return Domain(
         description=f"integer({low!r}, {high!r})",
         strategy=st.integers(min_value=low, max_value=high),
+        generates=(int,),
     )
 
 
@@ -282,6 +289,9 @@ def one_of(values: Iterable[Any]) -> Domain:
     return Domain(
         description=f"one_of({shown})",
         strategy=st.sampled_from(materialized),
+        # The distinct types of the given values, so a base type that none
+        # of them could satisfy is caught.
+        generates=tuple(dict.fromkeys(type(value) for value in materialized)),
     )
 
 
@@ -327,4 +337,5 @@ def list_of(
     return Domain(
         description=f"list_of({', '.join(described)})",
         strategy=st.lists(element_strategy, min_size=min_size, max_size=max_size),
+        generates=(list,),
     )

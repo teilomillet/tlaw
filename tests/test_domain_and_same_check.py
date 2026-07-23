@@ -118,3 +118,32 @@ def test_a_failing_same_law_shows_both_sides_and_the_shrunk_input(
     assert "first difference at value[0]" in result.output
     assert "absolute difference" in result.output
     assert "Failing test case" in result.output
+
+
+ALIAS_EXPLAIN_LAWS = """\
+from typing import Annotated
+
+import tlaw
+
+
+type Reward = Annotated[float, tlaw.number(0, 1)]
+type Count = Annotated[int, tlaw.integer(1, 8)]
+
+
+@tlaw.law
+def bounded(rewards: list[Reward], count: Count):
+    return all(0 <= r <= 1 for r in rewards) and 1 <= count <= 8
+"""
+
+
+def test_explain_expands_aliased_domain_bounds(tmp_path: Path) -> None:
+    # A PEP 695 alias hid its domain behind the alias name in --explain;
+    # it is now expanded to the generated domain.
+    (tmp_path / "laws.py").write_text(ALIAS_EXPLAIN_LAWS, encoding="utf-8")
+
+    result = tlaw.check(tmp_path / "laws.py", explain=True)
+
+    assert result.passed is True
+    assert "rewards: list[number(0, 1)]" in result.output
+    assert "count: integer(1, 8)" in result.output
+    assert "list[Reward]" not in result.output

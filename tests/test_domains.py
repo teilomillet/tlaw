@@ -9,7 +9,7 @@ domain across its laws.
 from __future__ import annotations
 
 import math
-from typing import Annotated
+from typing import Annotated, Protocol
 
 import pytest
 from hypothesis import given
@@ -262,3 +262,101 @@ def test_one_of_composes_with_depends_for_computed_choices() -> None:
         return gpus % size == 0
 
     a_chosen_size_always_divides_the_count()
+
+
+# --- Annotated base-type / domain agreement -----------------------------
+
+BadNumberBase = Annotated[str, tlaw.number(0, 1)]
+BadIntegerBase = Annotated[str, tlaw.integer(1, 8)]
+IntBaseFloatDomain = Annotated[int, tlaw.number(0, 1)]
+ObjectBase = Annotated[object, tlaw.number(0, 1)]
+UnionBase = Annotated[int | float, tlaw.integer(1, 8)]
+StrChoice = Annotated[str, tlaw.one_of(["fp8", "fp16"])]
+BadChoiceBase = Annotated[int, tlaw.one_of(["fp8", "fp16"])]
+MixedChoice = Annotated[int, tlaw.one_of([1, "wrong type"])]
+
+
+class HasValue(Protocol):
+    value: int
+
+
+class ConcreteValue:
+    value = 1
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, ConcreteValue) and other.value == self.value
+
+
+ProtocolChoice = Annotated[HasValue, tlaw.one_of([ConcreteValue()])]
+
+
+def test_a_base_type_that_contradicts_its_domain_is_refused() -> None:
+    # str claimed to the checker, floats generated: the contract lies.
+    with pytest.raises(TypeError) as refusal:
+
+        @tlaw.law
+        def wrong(value: BadNumberBase):
+            return True
+
+    message = str(refusal.value)
+    assert "never produces" in message
+    assert "str" in message and "float" in message
+
+
+def test_int_base_with_a_float_domain_is_a_proven_mismatch() -> None:
+    # int is not a float instance, so this is a real inconsistency.
+    with pytest.raises(TypeError):
+
+        @tlaw.law
+        def wrong(value: IntBaseFloatDomain):
+            return True
+
+    with pytest.raises(TypeError):
+
+        @tlaw.law
+        def also_wrong(value: BadIntegerBase):
+            return True
+
+    with pytest.raises(TypeError):
+
+        @tlaw.law
+        def bad_choice(value: BadChoiceBase):
+            return True
+
+
+def test_a_compatible_or_permissive_base_is_accepted() -> None:
+    # object accepts anything; a union that includes the generated type
+    # is fine; a matching finite-choice base is fine. None should raise.
+    @tlaw.law
+    def with_object(value: ObjectBase):
+        return isinstance(value, float)
+
+    @tlaw.law
+    def with_union(value: UnionBase):
+        return isinstance(value, int)
+
+    @tlaw.law
+    def with_choice(value: StrChoice):
+        return isinstance(value, str)
+
+    with_object()
+    with_union()
+    with_choice()
+
+
+def test_every_type_in_a_mixed_domain_must_fit_the_annotated_base() -> None:
+    with pytest.raises(TypeError) as refusal:
+
+        @tlaw.law
+        def mixed_choice_is_not_all_integers(value: MixedChoice):
+            return True
+
+    assert "int/str" in str(refusal.value)
+
+
+def test_an_uncheckable_protocol_base_is_left_unproven() -> None:
+    @tlaw.law
+    def protocol_contract_is_not_guessed(value: ProtocolChoice):
+        return value.value == 1
+
+    protocol_contract_is_not_guessed()

@@ -6,6 +6,8 @@ import copy
 import inspect
 import math
 import os
+import types
+from typing import Union
 from dataclasses import dataclass, field, replace
 from functools import wraps
 from typing import (
@@ -254,6 +256,36 @@ def _ensure_generated_inputs_unchanged(
             )
 
 
+def _render_annotation(annotation: Any) -> str:
+    """Render an annotation for --explain, expanding domains and aliases.
+
+    A PEP 695 alias such as ``list[Reward]`` where
+    ``Reward = Annotated[float, tlaw.number(0, 1)]`` is expanded to
+    ``list[number(0, 1)]``, so the generated domain is visible in the
+    explanation line rather than hidden behind the alias name. Only
+    annotations that mention a domain take this path; everything else
+    keeps Python's ordinary formatting.
+    """
+    annotation = _unwrap_alias(annotation)
+    if isinstance(annotation, Domain | DependentDomain):
+        return annotation.description
+    origin = get_origin(annotation)
+    if origin is Annotated:
+        base, *metadata = get_args(annotation)
+        domains = [value for value in metadata if isinstance(value, Domain)]
+        if len(domains) == 1:
+            return domains[0].description
+        return _render_annotation(base)
+    arguments = get_args(annotation)
+    if origin is not None and arguments:
+        origin_name = getattr(origin, "__name__", None) or inspect.formatannotation(
+            origin
+        )
+        rendered = ", ".join(_render_annotation(argument) for argument in arguments)
+        return f"{origin_name}[{rendered}]"
+    return inspect.formatannotation(annotation)
+
+
 def _annotation_text(function: LawFunction) -> tuple[str, ...]:
     try:
         hints = get_type_hints(function, include_extras=True)
@@ -271,7 +303,11 @@ def _annotation_text(function: LawFunction) -> tuple[str, ...]:
         annotation = hints.get(
             parameter.name, resolved.get(parameter.name, parameter.annotation)
         )
-        texts.append(f"{parameter.name}: {inspect.formatannotation(annotation)}")
+        if _mentions_domain(annotation):
+            rendered = _render_annotation(annotation)
+        else:
+            rendered = inspect.formatannotation(annotation)
+        texts.append(f"{parameter.name}: {rendered}")
     return tuple(texts)
 
 
@@ -280,6 +316,69 @@ def _mentions_domain(annotation: Any) -> bool:
     if isinstance(annotation, Domain | DependentDomain):
         return True
     return any(_mentions_domain(value) for value in get_args(annotation))
+
+
+def _annotation_base_classes(base: Any) -> tuple[type, ...] | None:
+    """Reduce an annotation to the concrete classes it permits, or None.
+
+    None means "cannot prove anything" — ``Any``, a bare ``object``, a
+    type variable, or a member of a union that itself accepts anything.
+    In that case tlaw makes no claim, because it never refuses a mismatch
+    it cannot prove.
+    """
+    base = _unwrap_alias(base)
+    if base is Any or base is object:
+        return None
+    origin = get_origin(base)
+    if origin is None:
+        return (base,) if isinstance(base, type) else None
+    if origin is Union or origin is types.UnionType:
+        classes: list[type] = []
+        for argument in get_args(base):
+            reduced = _annotation_base_classes(argument)
+            if reduced is None:
+                return None  # a branch accepts anything: prove nothing
+            classes.extend(reduced)
+        return tuple(classes)
+    if isinstance(origin, type):
+        return (origin,)  # list[int] -> list, dict[str, int] -> dict
+    return None
+
+
+def _verify_base_matches_domain(
+    base: Any, domain: Domain, *, description: str, parameter: str
+) -> None:
+    """Refuse ``Annotated[base, domain]`` when the two provably disagree.
+
+    The base type is what a reader and a type checker believe flows
+    through; the domain is what tlaw actually generates. When the base
+    can only be a type that the domain never produces —
+    ``Annotated[str, tlaw.number(0, 1)]`` — the visible contract lies, so
+    it is refused at decoration time. When either side is unprovable, tlaw
+    stays silent rather than guess.
+    """
+    if not domain.generates:
+        return
+    allowed = _annotation_base_classes(base)
+    if allowed is None:
+        return
+    for generated in domain.generates:
+        try:
+            compatible = any(issubclass(generated, permitted) for permitted in allowed)
+        except TypeError:
+            return
+        if not compatible:
+            break
+    else:
+        return
+    generated_names = "/".join(sorted(t.__name__ for t in domain.generates))
+    base_names = "/".join(sorted(t.__name__ for t in allowed))
+    raise TypeError(
+        f"law '{description}' parameter '{parameter}': the Annotated base type "
+        f"({base_names}) cannot hold what {domain.description} generates "
+        f"({generated_names}); the visible contract would claim a type the "
+        "domain never produces"
+    )
 
 
 def _domain_strategy(
@@ -309,9 +408,12 @@ def _domain_strategy(
         # depends on have been drawn, which happens in _ordered_inputs.
         return annotation
     if get_origin(annotation) is Annotated:
-        _, *metadata = get_args(annotation)
+        base, *metadata = get_args(annotation)
         domains = [value for value in metadata if isinstance(value, Domain)]
         if len(domains) == 1 and len(metadata) == 1:
+            _verify_base_matches_domain(
+                base, domains[0], description=description, parameter=parameter
+            )
             return domains[0].strategy
         raise TypeError(
             f"law '{description}' parameter '{parameter}' mixes a tlaw domain "
