@@ -1,1 +1,0 @@
-Document the vocabulary as an escalation ladder — reach for a rung only when the one below cannot say what you mean — and enforce an explicit API token for every rung while classifying every other public name as a non-rung.

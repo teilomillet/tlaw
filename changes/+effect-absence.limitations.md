@@ -1,1 +1,0 @@
-tlaw does not observe whether a collaborator was called; state effect-absence by injecting a double, and signal from it with a `BaseException` subclass when the code under law catches `Exception` broadly.

@@ -1,1 +1,0 @@
-A counterexample built by `tlaw.record(Constructor, ...)` is reported as a law failure with exit code `1` but is not replayable evidence, because the typed input encoder has no safe representation for an arbitrary constructed type; `--json` exits `2` since the requested report cannot be written, and the dictionary form of `record` replays normally.

@@ -1,1 +1,0 @@
-`tlaw check` and `tlaw mutate` ignore pytest `addopts` from both the target project and `PYTEST_ADDOPTS`, so flags that require non-autoloaded plugins produce law evidence instead of a pytest usage error.

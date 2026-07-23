@@ -6,6 +6,54 @@ files into this document when the release is prepared.
 
 <!-- towncrier release notes start -->
 
+## 0.0.4 — 2026-07-23
+
+### Added
+
+- Add `tlaw.excludes(value, *fragments)` for redaction contracts; it searches
+  nested structures, dataclasses, and enums, reports the leaked fragment and
+  the path it was found at, and refuses a value whose content it cannot
+  establish rather than searching a `repr` that may hide the fragment.
+- Add `tlaw.record(constructor, **fields)` for composite inputs, generating a
+  dictionary or a constructed value from nested domains; a field may be a
+  `depends(...)` domain naming sibling fields of the same record.
+- Add `tlaw.returns(Type, function, *arguments)` for railway code: it states
+  that a call returns a given branch, awaits `async` targets, and names what
+  actually came back instead of reporting `False`.
+- Document the vocabulary as an escalation ladder — reach for a rung only when
+  the one below cannot say what you mean — and enforce an explicit API token
+  for every rung while classifying every other public name as a non-rung.
+- `tlaw.raises` and `tlaw.returns` results carry `.and_then(...)` so a second
+  claim about the raised exception or returned value keeps its own failure
+  explanation.
+- `tlaw.raises` awaits an `async` target and accepts any exception type, so a
+  cancellation contract on a coroutine function needs no `asyncio.run` shim.
+
+### Changed
+
+- `tlaw check` now exits `1` for a law failure whose counterexample cannot be
+  retained, instead of `2`, so a real refutation is no longer reported as a
+  broken harness; the report carries the separate `summary.retained` flag and
+  `--json` still exits `2` when it cannot write the requested evidence.
+
+### Fixed
+
+- `tlaw check` and `tlaw mutate` ignore pytest `addopts` from both the target
+  project and `PYTEST_ADDOPTS`, so flags that require non-autoloaded plugins
+  produce law evidence instead of a pytest usage error.
+
+### Known limitations
+
+- A counterexample built by `tlaw.record(Constructor, ...)` is reported as a
+  law failure with exit code `1` but is not replayable evidence, because the
+  typed input encoder has no safe representation for an arbitrary constructed
+  type; `--json` exits `2` since the requested report cannot be written, and
+  the dictionary form of `record` replays normally.
+- tlaw does not observe whether a collaborator was called; state effect-absence
+  by injecting a double, and signal from it with a `BaseException` subclass
+  when the code under law catches `Exception` broadly.
+
+
 ## 0.0.3 — 2026-07-23
 
 ### Added

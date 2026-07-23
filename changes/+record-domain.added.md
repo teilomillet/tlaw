@@ -1,1 +1,0 @@
-Add `tlaw.record(constructor, **fields)` for composite inputs, generating a dictionary or a constructed value from nested domains; a field may be a `depends(...)` domain naming sibling fields of the same record.
