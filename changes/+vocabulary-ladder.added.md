@@ -1,0 +1,1 @@
+Document the vocabulary as an escalation ladder — reach for a rung only when the one below cannot say what you mean — in the `tlaw` module docstring and the README, and add a gate test that fails if a new public name is neither placed on the ladder nor explicitly declared a non-rung.

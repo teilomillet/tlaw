@@ -118,6 +118,41 @@ copies generated inputs and rejects a passing bare law when it detects that the
 law mutated one; stateful behavior should use the explicit path interface
 below.
 
+## The vocabulary is a ladder
+
+You now know the whole first rung: `@tlaw.law` and a returned `==`. Everything
+else is an escalation you reach for **only when the rung below cannot say what
+you mean** — most laws never leave the first rung. The same module docstrings
+(`import tlaw; help(tlaw)`) carry this map.
+
+What the law returns:
+
+| Reach for | When the claim is |
+| --- | --- |
+| `return a == b` | exact equality of ordinary values — start here |
+| `same(a, b, within=, relative=)` | equal *within tolerance*, or nested/array/float values |
+| `raises(Exc, f, ...)` | a call must **raise** |
+| `returns(Type, f, ...)` | a call must **return** an error-value branch (`Err`), not raise |
+| `excludes(text, *forbidden)` | something must **not** appear (a leaked secret, hostname, traceback) |
+| `raises(...).and_then(observe)` | one call carries **two** claims (it refused, *and* its message is redacted) |
+
+What the annotation generates:
+
+| Reach for | When |
+| --- | --- |
+| `values: list[int]` | a plain type covers the real inputs — start here |
+| `number(lo, hi)` · `integer(lo, hi)` · `one_of(...)` | the plain type is broader than the real domain |
+| `list_of(...)` | a list of a domain, with visible size bounds |
+| `depends(...)` · `record(...)` | inputs are **related**: one bounds another, or a record's fields must agree |
+
+When behavior mutates state, describe [two paths from fresh starts](#describe-stateful-paths)
+instead of a returned value.
+
+Getting evidence is a separate axis, ordered by how hard the laws are tried:
+`tlaw check` (do they hold?) → `tlaw mutate` (do they *constrain*?) →
+`tlaw diff` (did a commit change a law's *meaning*?) → `tlaw audit` (do they
+reject declared-wrong implementations?).
+
 ## Make law changes loud
 
 Git remains the acceptance ledger: a committed law is accepted behavior.
