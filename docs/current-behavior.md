@@ -32,6 +32,8 @@ An inferred law may return:
 - one Python `bool`;
 - a `tlaw.Comparison` from `tlaw.same(...)`;
 - a `tlaw.Refusal` from `tlaw.raises(...)`;
+- a `tlaw.Outcome` from `tlaw.returns(...)`;
+- a `tlaw.Exclusion` from `tlaw.excludes(...)`;
 - a path `Equation` from `.same_as(...)`; or
 - `None`, which is useful when the body raises its own assertion.
 
@@ -129,10 +131,21 @@ timeouts, or other harness failures.
 
 Typed input encoding supports `None`, booleans, integers (without JSON's
 integer-size ambiguity), finite or non-finite floats, strings, bytes, lists,
-tuples, dictionaries, sets, and frozensets, recursively. A counterexample
-containing another type is still a real law failure, but it is not replayable
-evidence: `check` exits `2`, names the unsupported input, and the CLI does not
-write the requested JSON file.
+tuples, dictionaries, sets, and frozensets, recursively.
+
+A counterexample containing another type — anything `record(Constructor, ...)`
+builds, for instance — is a real law failure and is reported as one. These are
+two separate facts and neither is allowed to overwrite the other:
+
+- the law was refuted, so `summary.status` is `failed` and `check` exits `1`;
+  and
+- the counterexample could not be encoded, so `summary.retained` is `false`,
+  the named input appears in the output, and no JSON is written.
+
+Only when evidence was actually requested does the unretainable counterexample
+decide the exit code: `check --json` exits `2`, because the artifact asked for
+cannot be produced. A plain `check` in a CI gate therefore reports a genuine
+defect as a defect rather than as a broken harness.
 
 Law paths are relative when the law lives below the directory where `check`
 was launched. Run search and replay from the repository root so a report can
@@ -141,7 +154,7 @@ move with the repository to another machine.
 ## Visible input domains
 
 Ordinary annotations such as `int`, `str`, and `list[int]` use Hypothesis's
-type inference. Four concrete tlaw domain builders are also implemented:
+type inference. Five concrete tlaw domain builders are also implemented:
 
 ```python
 Reward = tlaw.number(0, 1)
@@ -214,6 +227,67 @@ type is left alone rather than guessed.
 `rewards: list[Reward]` with `type Reward = Annotated[float, tlaw.number(0, 1)]`
 is reported as `rewards: list[number(0, 1)]` — the generated domain is visible
 in the explanation line, not hidden behind the alias.
+
+### Composite domains
+
+`record(**fields)` generates a value with fixed named fields, each drawn from
+its own domain. Without a constructor it generates a dictionary; with one, the
+constructor is applied to the drawn fields by keyword:
+
+```python
+Source = tlaw.record(attachment_id=tlaw.one_of(["upload-1"]))
+Document = tlaw.record(
+    DocumentRequest,
+    id=DocumentIds,
+    source=Source,
+    fields=Selections,
+)
+Request = tlaw.record(documents=tlaw.list_of(Document, min_size=1, max_size=2))
+```
+
+Records nest through each other and through `list_of`, so a whole structured
+request is one declaration, and `--explain` prints the complete generated
+shape rather than an opaque name.
+
+Each field is a tlaw domain or a plain type, exactly as `list_of` accepts
+them. A constant field is stated as `one_of([value])`; a bare value is
+refused, so a value is never mistaken for a type. A record with no fields is
+refused, and a non-callable constructor is refused, both at definition time.
+
+A field may also be a `depends(...)` domain, and inside a record it names
+**sibling fields of that same record**:
+
+```python
+Document = tlaw.record(
+    fields=Selections,
+    checked=tlaw.depends(lambda fields: tlaw.one_of(fields)),
+)
+```
+
+Siblings are the only namespace a record's `depends` can reach. A name that
+is not a sibling is refused when the record is defined, and the refusal says
+so — including when that name really is a law parameter. `depends` at law
+level names law parameters; resolving one word against whichever namespace
+happened to contain the name would be a guess about which contract the author
+meant, so the boundary is enforced rather than inferred. Fields are drawn in
+dependency order and cycles are refused, naming the record.
+
+As at law level, the relation holds **by construction**: nothing is filtered,
+so no example is discarded and no law using the record can quietly become
+vacuous.
+
+When the constructor is a class, the record declares that class as what it
+generates, so a contradicting `Annotated` base type is refused like any other
+domain. Any other callable declares nothing, and tlaw makes no claim.
+
+A record **without** a constructor generates dictionaries, which the typed
+input encoder retains, so its counterexamples replay. A record **with** a
+constructor generates values of that type, and the encoder has no safe
+representation for an arbitrary type: such a failure is still reported in
+full, but it is not replayable evidence, so `check` exits `2` and `--json`
+is not written. This is the pre-existing typed-encoding rule, and `record`
+makes it easy to reach — prefer the dictionary form when replayable
+evidence matters.
 
 ### Dependent domains
 
@@ -335,9 +409,89 @@ def an_oversized_sequence_is_refused(raw: RawLengths, budget: Budget):
 tlaw performs the call and retains the outcome, so a failing law names
 what actually happened — "the call returned (...) instead of raising" or
 "the call raised TypeError: ..." — rather than reporting `False`. Any
-other `Exception` becomes that evidence; `KeyboardInterrupt` and other
-non-`Exception` exits propagate. The expected type must be an `Exception`
-subclass, checked at the call site.
+other `Exception` becomes that evidence.
+
+The expected type may be any exception type, including one outside
+`Exception`. A non-`Exception` exit the law did **not** name still
+propagates, so a law about `ValueError` never swallows `KeyboardInterrupt`.
+Naming `asyncio.CancelledError` is the case that earned this: cancellation is
+control flow, and the anef probe's cancellation law had no spelling before.
+
+An `async` target is awaited. Calling an `async def` only builds a coroutine,
+so the contract used to observe a returned coroutine instead of the outcome —
+the work had not happened yet:
+
+```python
+@tlaw.law
+def resolver_cancellation_propagates(declared: Selections):
+    return tlaw.raises(asyncio.CancelledError, resolve, request, resolver)
+```
+
+The report says whether tlaw awaited: "the awaited call raised
+CancelledError as required". tlaw owns a fresh event loop per observed call.
+If a loop is already running in the thread, tlaw refuses with a harness error
+rather than capturing that refusal as evidence about the code under law.
+
+## One returned-branch contract
+
+`tlaw.returns(Type, function, *arguments)` is the dual of `raises` for code
+that returns its failure instead of raising it:
+
+```python
+@tlaw.law
+def an_unknown_field_stays_caller_attributable(unknown: UnknownFieldIds):
+    return tlaw.returns(Err, resolve, request_for(unknown), resolver).and_then(
+        lambda failure: tlaw.same(caller_attributable(failure), True)
+    )
+```
+
+A subclass counts, matching `isinstance`. An `async` target is awaited on the
+same terms as `raises`. An exception is reported as the failure of the
+contract — "expected Err, but the call raised TypeError: ..." — while a
+non-`Exception` exit propagates. An exception type passed as the expected
+branch is refused at the call site, naming `tlaw.raises` instead.
+
+`Refusal.and_then(...)` and `Outcome.and_then(...)` state a second claim
+about the exception that was raised or the value that came back. Combining
+two claims with `and` converts the first to a boolean and loses its
+explanation; `and_then` keeps whichever claim actually failed, so the report
+either names the wrong branch or explains the second comparison, never both
+collapsed into `False`.
+
+## One non-leakage contract
+
+`tlaw.excludes(value, *fragments)` states that no forbidden fragment appears
+anywhere in a value:
+
+```python
+return tlaw.returns(Err, resolve, request, exploding_resolver).and_then(
+    lambda failure: tlaw.excludes(failure, hostname, "Traceback")
+)
+```
+
+The search is structural. Dictionaries are searched through both keys and
+values, because a leaked identifier used as a key is exactly as exposed as
+one used as a value; lists, tuples, and sets are searched item by item; a
+dataclass is descended into by declared field name, so a failure reports
+`found at value.error.issues[0]` rather than one repr of the whole structure;
+and an enum is searched through its name and value.
+
+A value whose content tlaw cannot establish is **refused**, naming the path
+it was reached at. tlaw reads text, bytes, the primitives whose `repr` the
+language itself defines, and containers, dataclasses, and enums built from
+those. It does not render an arbitrary object with `repr` and search the
+text, because a masking `repr` — Pydantic's `SecretStr('**********')`, or any
+hand-written one that omits detail — would make this contract report "clean"
+about a value that leaks as soon as it is serialized. A redaction law that
+passes for that reason is worse than no law, so the guess is refused. The
+refusal names the fix: pass the value as it leaves the system, which is also
+the more accurate claim, since a client receives the serialized reply and
+never a `repr`.
+
+A `bytes` fragment is looked for in `bytes` and a `str` fragment in `str`;
+tlaw does not guess an encoding to bridge them. An empty fragment, a
+non-string fragment, and a call with no fragments at all are refused, because
+each would make the law unfalsifiable.
 
 ## Stateful paths
 
@@ -363,7 +517,11 @@ uv run --project path/to/project --with path/to/tlaw tlaw check laws.py
 ```
 
 `--project` supplies the target's environment and `--with` injects tlaw for
-that run only, so the target repository is read, not modified. This is the
+that run only, so the target repository is read, not modified. The target's
+own pytest `addopts` are **not** applied: tlaw owns this invocation and
+disables third-party plugin autoload, so an inherited flag from a plugin that
+is now absent would turn every check into a pytest usage error. `--explain`
+states this next to the plugin line. This is the
 protocol recorded in `docs/kvfit-probe.md`. `tlaw mutate` uses the same
 external laws-file pattern for package targets: it copies the target package
 into an isolated run and places that copy before the installed package. Its
@@ -374,11 +532,11 @@ observe that copy.
 
 | Command | Implemented behavior | Exit behavior |
 | --- | --- | --- |
-| `tlaw check laws.py` | Runs one Python law file with third-party pytest plugin autoload disabled and constructs replay evidence for a failure. | `0` for pass, `1` for a retained law failure, `2` when the failure or harness cannot produce valid evidence. |
+| `tlaw check laws.py` | Runs one Python law file with third-party pytest plugin autoload disabled and the project's `addopts` not applied, and constructs replay evidence for a failure. | `0` for pass, `1` for a law failure whether or not its counterexample could be retained, `2` when the harness could not produce a verdict at all. |
 | `tlaw check feature/` | Discovers every `laws.py` and `*_laws.py` under a folder and checks each. Per-file evidence flags (`--search`, `--json`, `--seed`, `--replay`) are refused in folder mode. | Worst per-file code: `0` only when every file passes, else `1` or `2`. |
 | `tlaw check laws.py --explain` | Adds the inferred-generation explanation before the pytest result. Aliased domains are expanded. | Same as `check`. |
 | `tlaw check laws.py --search [--seed N]` | Uses a fresh visible seed, or reuses `N`, instead of deterministic inferred generation. | Same as `check`. |
-| `tlaw check laws.py --json report.json` | Writes the stable `tlaw.check/v1` report; it composes with `--search`. | Same as `check`. |
+| `tlaw check laws.py --json report.json` | Writes the stable `tlaw.check/v1` report; it composes with `--search`. | Same as `check`, except `2` when a counterexample cannot be retained, because the requested evidence cannot be produced. |
 | `tlaw check --replay report.json` | Runs exactly the retained law inputs and no neighboring tests. | `0` when every failure is reproduced exactly, `1` when behavior differs, `2` for invalid evidence. |
 | `tlaw diff BASE..HEAD` | Parses tlaw laws from two Git revisions without executing them and reports the law-space difference. | `0` for no law changes, `1` when law changes are present, `2` for an invalid range or unreadable source. |
 | `tlaw audit audit.py` | Runs one declared baseline and declared known-wrong implementations from a Python `Lawbook`. Legacy TOML manifests also work. | `0` when all declared wrong implementations are rejected, `1` when one survives, `2` for invalid evidence. |
@@ -444,8 +602,9 @@ contradicted entries are printed as stale.
 
 ## Python entry points
 
-The top-level package exports `law`, `system`, `same`, `raises`, `number`,
-`integer`, `one_of`, `list_of`, `depends`, `check`, `check_folder`,
+The top-level package exports `law`, `system`, `same`, `raises`, `returns`,
+`excludes`, `number`,
+`integer`, `one_of`, `list_of`, `record`, `depends`, `check`, `check_folder`,
 `discover_law_files`, `replay`, `diff`, `audit`, and `mutate`, plus their result
 and error types, including `FolderCheckResult`. Runner functions return
 structured objects with text and JSON renderers where applicable.
@@ -458,9 +617,21 @@ produce evidence.
 ## Not implemented
 
 - arbitrary or composable domain predicates beyond the implemented numeric,
-  finite-choice, list, and dependent domains;
-- domains inside dictionaries, tuples, custom classes, or other unsupported
-  nested positions;
+  finite-choice, list, record, and dependent domains;
+- a relation reaching *across* scopes — a record field cannot depend on a law
+  parameter, and a law parameter cannot depend on a record's field; each
+  `depends` sees one namespace and says so when a name is not in it;
+- a domain written directly inside a `dict[...]`, `tuple[...]`, or another
+  annotation position tlaw cannot generate from; composite values are
+  declared with `record` instead, and an unsupported position is still
+  refused at decoration time rather than silently discarded;
+- observing whether a collaborator was *not* called. tlaw sequences the calls
+  a law makes; it does not spy. State effect-absence by injecting a double
+  that signals when it is reached, and signal with a `BaseException` subclass
+  when the code under law catches `Exception` broadly — a probe found a
+  correct `except Exception` in the target absorbing a double's
+  `AssertionError`, which turned a real violation into an unrelated failure
+  (probes/anef);
 - configurable NaN equality;
 - opt-in loading of third-party pytest plugins;
 - automatic pipeline tracing, dependency maps, contract-conflict planning, or

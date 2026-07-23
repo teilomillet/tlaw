@@ -33,13 +33,21 @@ domains, structural comparison, stateful paths, and mutation evidence:
 - `number(...)`, `integer(...)`, `one_of(...)`, and `list_of(...)` define
   visible finite-float, bounded-integer, finite-choice, and list domains
   without Hypothesis syntax;
+- `record(...)` composes named fields into a dictionary or a constructed
+  value, and nests, so a whole structured request is one visible domain;
 - `depends(...)` derives one parameter's domain from another's generated
   value, so relational inputs are generated correctly by construction;
 - `same(..., within=..., relative=...)` compares nested values and array-like
   values with explicit absolute and relative tolerances and reports the first
   difference;
 - `raises(Expected, function, ...)` states an exception contract whose
-  failure names what actually happened instead of returning False;
+  failure names what actually happened instead of returning False, and awaits
+  an `async` target;
+- `returns(Branch, function, ...)` states the same kind of contract for code
+  that returns its failure instead of raising it, and `.and_then(...)` adds a
+  second claim without losing the first one's explanation;
+- `excludes(value, *fragments)` states that no internal detail leaks,
+  searching nested structures and reporting where a fragment was found;
 - `tlaw check laws.py --explain` runs the laws and reports what it generated;
 - `tlaw check feature/` discovers and checks every law file under a folder;
 - `tlaw check laws.py --search --json failure.json` uses a fresh visible seed
@@ -58,8 +66,11 @@ domains, structural comparison, stateful paths, and mutation evidence:
 
 Important pieces are still intentionally absent: domain predicates and nested
 domain positions beyond the implemented `number`, `integer`, `list_of`,
-`one_of`, `depends`, and supported `Annotated` forms; opt-in third-party
-pytest plugins; and impact graphs.
+`one_of`, `record`, `depends`, and supported `Annotated` forms; relations
+across a record's field scope and a law's parameter scope; observing that a
+collaborator was *not* called, which is a decided non-goal — tlaw sequences
+the calls a law makes and does not spy; opt-in third-party pytest plugins;
+and impact graphs.
 
 ## Write a first law
 
@@ -276,9 +287,12 @@ uv run --project path/to/project --with tlaw tlaw check laws.py
 `--project` supplies the target's dependencies; `--with` injects tlaw for
 the run only. Nothing in the target repository changes — no pyproject edit,
 no committed files — which makes this the cheapest honest way to answer
-"would laws hold on this code?" before adopting anything. The documented
+"would laws hold on this code?" before adopting anything. The target's own
+pytest `addopts` are deliberately not applied, so a project configured for a
+plugin tlaw does not autoload still runs. The documented
 [kvfit probe](https://github.com/teilomillet/tlaw/blob/main/docs/kvfit-probe.md)
-ran this way and paid for features with its findings.
+and [anef probe](https://github.com/teilomillet/tlaw/blob/main/probes/anef/README.md)
+ran this way and paid for features with their findings.
 
 ## Release to PyPI
 

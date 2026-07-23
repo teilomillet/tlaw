@@ -1,0 +1,1 @@
+Add `tlaw.excludes(value, *fragments)` for redaction contracts; it searches nested structures, dataclasses, and enums, reports the leaked fragment and the path it was found at, and refuses a value whose content it cannot establish rather than searching a `repr` that may hide the fragment.

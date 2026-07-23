@@ -69,6 +69,7 @@ def pytest_collection_finish(session: Any) -> None:
 
     reporter.write_line(f"tlaw generation (Hypothesis {hypothesis.__version__}):")
     reporter.write_line("  pytest plugins: third-party autoload disabled")
+    reporter.write_line("  pytest addopts: project addopts not applied")
     for description, inputs, max_examples, deterministic in laws:
         if os.environ.get(MODE_ENV) == "search" and isinstance(max_examples, int):
             posture = (

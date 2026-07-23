@@ -5,6 +5,8 @@ What
 ``number(low, high)`` declares a finite float between two bounds.
 ``integer(low, high)`` declares a bounded integer.
 ``list_of(element, ...)`` declares a list of a domain or plain type.
+``record(**fields)`` declares a composite: a dict, or a constructor
+applied to the drawn fields.
 ``depends(builder)`` derives a domain from other generated parameters.
 A domain is an ordinary value: assign it a name, use that name as a
 parameter annotation, and the bare ``@tlaw.law`` form generates inputs
@@ -38,6 +40,9 @@ How
 - ``list_of`` accepts a ``Domain`` or a plain type (``int``, ``str``);
   a plain type generates exactly what the bare annotation would, so the
   two spellings never disagree.
+- ``record`` accepts the same per field and nests through itself and
+  ``list_of``, so a whole structured request is one declaration whose
+  shape stays visible in ``--explain``.
 - ``depends`` names dependencies through the builder's parameter names;
   tlaw draws those first and builds the dependent domain without filtering.
 - Domains used as annotations must be module-level names: annotations
@@ -168,12 +173,14 @@ def depends(builder: Callable[..., Domain]) -> DependentDomain:
 
 
 def generation_order(
-    specifications: dict[str, Any], *, description: str
+    specifications: dict[str, Any], *, description: str, subject: str = "law"
 ) -> tuple[str, ...]:
-    """Order parameters so every dependency is drawn before its dependent.
+    """Order names so every dependency is drawn before its dependent.
 
     Unknown names and cycles are refused here, at decoration time, rather
-    than surfacing later as a confusing generation error.
+    than surfacing later as a confusing generation error. ``subject`` names
+    the scope being ordered — a law's parameters or a record's fields — so
+    the refusal cannot describe the wrong namespace.
     """
     remaining = dict(specifications)
     ordered: list[str] = []
@@ -187,8 +194,8 @@ def generation_order(
         if not ready:
             blocked = ", ".join(sorted(remaining))
             raise TypeError(
-                f"law '{description}' has dependent domains that cannot be "
-                f"ordered: {blocked}; check for a cycle"
+                f"{subject} '{description}' has dependent domains that cannot "
+                f"be ordered: {blocked}; check for a cycle"
             )
         for name in ready:
             ordered.append(name)
@@ -292,6 +299,160 @@ def one_of(values: Iterable[Any]) -> Domain:
         # The distinct types of the given values, so a base type that none
         # of them could satisfy is caught.
         generates=tuple(dict.fromkeys(type(value) for value in materialized)),
+    )
+
+
+def record(constructor: Callable[..., Any] | None = None, /, **fields: Any) -> Domain:
+    """A value with fixed named fields, each drawn from its own domain.
+
+    Valid input is often a structure, not a scalar. The anef probe's
+    flagship parity law needs a whole verification request — a nested
+    composite of documents, sources, and field selections — and with only
+    scalar and list domains that law could not be written generatively at
+    all; it degraded to a hand-curated ``one_of`` of seed values (issue #1,
+    gap G1).
+
+    Without a constructor, a dictionary is generated, which is what a JSON
+    payload wants::
+
+        Source = tlaw.record(attachment_id=Identifiers)
+        Payload = tlaw.record(
+            schema_version=tlaw.one_of(["verification.request.v2"]),
+            documents=tlaw.list_of(Document, min_size=1, max_size=2),
+        )
+
+    With one, it is applied to the drawn fields by keyword, which is what a
+    dataclass wants::
+
+        Document = tlaw.record(
+            DocumentRequest,
+            id=DocumentIds,
+            type=DocumentTypes,
+            source=Sources,
+            fields=Selections,
+        )
+
+    Records nest through each other and through ``list_of``, so a whole
+    request is one readable declaration and ``--explain`` prints the shape
+    that was actually generated.
+
+    Each field is a tlaw domain or a plain type, exactly as ``list_of``
+    accepts them — a constant is stated as ``one_of([value])``, so a value
+    is never mistaken for a type or the other way round.
+
+    A field may also be a ``depends(...)`` domain, and inside a record it
+    names **sibling fields of that same record**::
+
+        Selections = tlaw.one_of([("person_name",), ("birth_date",)])
+        Document = tlaw.record(
+            fields=Selections,
+            check=tlaw.depends(lambda fields: tlaw.one_of(check_on(fields))),
+        )
+
+    Siblings are the only namespace a record's ``depends`` can reach. It
+    cannot name a law parameter, and a name that is not a sibling is
+    refused when the record is defined, saying so. ``depends`` at law level
+    already names law parameters, and resolving one word against whichever
+    namespace happened to contain the name would be a guess about which
+    contract the author meant. Fields are drawn in dependency order and the
+    relation holds by construction — nothing is filtered, so no example is
+    discarded and no law using the record can quietly become vacuous.
+    """
+    if constructor is not None and not callable(constructor):
+        raise TypeError(
+            "record()'s first argument is the constructor applied to the drawn "
+            f"fields; got {type(constructor).__name__}, which is not callable"
+        )
+    if not fields:
+        raise ValueError(
+            "record() needs at least one named field; a record with no fields "
+            "generates one constant value and states nothing"
+        )
+
+    described: list[str] = []
+    specifications: dict[str, SearchStrategy[Any] | DependentDomain] = {}
+    for name, specification in fields.items():
+        if isinstance(specification, DependentDomain):
+            described.append(f"{name}={specification.description}")
+            specifications[name] = specification
+        elif isinstance(specification, Domain):
+            described.append(f"{name}={specification.description}")
+            specifications[name] = specification.strategy
+        elif isinstance(specification, type):
+            described.append(f"{name}={specification.__name__}")
+            specifications[name] = st.from_type(specification)
+        else:
+            raise TypeError(
+                f"record() field '{name}' must be a tlaw domain or a plain type; "
+                f"got {type(specification).__name__}. State a constant field as "
+                "one_of([value])"
+            )
+
+    label = "record"
+    if constructor is not None:
+        label = f"record({getattr(constructor, '__name__', type(constructor).__name__)}"
+    description = (
+        f"record({', '.join(described)})"
+        if constructor is None
+        else f"{label}, {', '.join(described)})"
+    )
+
+    # A record's depends() names siblings, so an unknown name is refused
+    # here rather than resolved against the law's parameters — one word
+    # must not silently mean two different namespaces.
+    unknown = {
+        need: name
+        for name, specification in specifications.items()
+        if isinstance(specification, DependentDomain)
+        for need in specification.dependencies
+        if need not in specifications
+    }
+    if unknown:
+        missing = ", ".join(sorted(unknown))
+        siblings = ", ".join(sorted(specifications))
+        raise TypeError(
+            f"record() field '{unknown[sorted(unknown)[0]]}' depends on "
+            f"{missing}, which is not a field of this record. A record's "
+            f"depends() names sibling fields only ({siblings}); it cannot "
+            "reach a law parameter, because one name must not mean two "
+            "different scopes"
+        )
+
+    drawn_in_order = generation_order(
+        specifications, description=description, subject="record"
+    )
+
+    if any(isinstance(value, DependentDomain) for value in specifications.values()):
+
+        @st.composite
+        def draw_fields(draw: Any) -> dict[str, Any]:
+            values: dict[str, Any] = {}
+            for name in drawn_in_order:
+                specification = specifications[name]
+                if isinstance(specification, DependentDomain):
+                    values[name] = draw(specification.resolve(values).strategy)
+                else:
+                    values[name] = draw(specification)
+            return values
+
+        fields_strategy = draw_fields()
+    else:
+        fields_strategy = st.fixed_dictionaries(
+            {name: value for name, value in specifications.items()}
+        )
+
+    if constructor is None:
+        return Domain(
+            description=description,
+            strategy=fields_strategy,
+            generates=(dict,),
+        )
+    return Domain(
+        description=description,
+        strategy=fields_strategy.map(lambda drawn: constructor(**drawn)),
+        # A class states what it builds; any other callable does not, and
+        # tlaw never claims a generated type it cannot prove.
+        generates=(constructor,) if isinstance(constructor, type) else (),
     )
 
 

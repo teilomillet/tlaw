@@ -170,6 +170,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         print(result.output, end="" if result.output.endswith("\n") else "\n")
         if args.json_path is not None:
+            if not result.report["summary"].get("retained", True):
+                # The law's verdict stands and was printed above. What failed
+                # is this request for replayable evidence, so the failure is
+                # reported against the request rather than against the code.
+                print(
+                    "tlaw: JSON not written because this counterexample cannot "
+                    "be retained for replay",
+                    file=sys.stderr,
+                )
+                return 2
             if result.report["summary"]["status"] == "invalid":
                 print(
                     "tlaw: JSON not written because the evidence is not replayable",

@@ -29,8 +29,11 @@ from .domains import (
     list_of,
     number,
     one_of,
+    record,
 )
+from .exclusion import Exclusion, excludes
 from .law_diff import LawChange, LawDiffResult, diff
+from .outcome import Outcome, returns
 from .refusal import Refusal, raises
 from .mutation import (
     CanaryRun,
@@ -56,6 +59,7 @@ __all__ = [
     "Domain",
     "EnforcementError",
     "Equation",
+    "Exclusion",
     "FolderCheckResult",
     "KnownWrongOutcome",
     "LawChange",
@@ -65,6 +69,7 @@ __all__ = [
     "Mutation",
     "MutationOutcome",
     "MutationResult",
+    "Outcome",
     "Path",
     "Refusal",
     "System",
@@ -74,6 +79,7 @@ __all__ = [
     "depends",
     "diff",
     "discover_law_files",
+    "excludes",
     "integer",
     "law",
     "list_of",
@@ -81,7 +87,9 @@ __all__ = [
     "number",
     "one_of",
     "raises",
+    "record",
     "replay",
+    "returns",
     "same",
     "system",
 ]

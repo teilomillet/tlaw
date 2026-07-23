@@ -1072,6 +1072,11 @@ def _run_pytest_in_copy(
         "-q",
         "-p",
         "no:cacheprovider",
+        # Same reason as ``tlaw check``: third-party plugin autoload is off,
+        # so an inherited ``addopts`` naming an absent plugin would make every
+        # mutant fail to start and be scored as a meaningless kill.
+        "-o",
+        "addopts=",
         boundary.laws_name,
     )
     environment = os.environ.copy()
@@ -1113,6 +1118,8 @@ def _run_pytest_in_copy(
                 "-q",
                 "-p",
                 "no:cacheprovider",
+                "-o",
+                "addopts=",
                 "--import-mode=importlib",
                 str(law_file),
             )

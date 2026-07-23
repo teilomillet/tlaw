@@ -1,0 +1,1 @@
+`tlaw check` now exits `1` for a law failure whose counterexample cannot be retained, instead of `2`, so a real refutation is no longer reported as a broken harness; the report carries the separate `summary.retained` flag and `--json` still exits `2` when it cannot write the requested evidence.

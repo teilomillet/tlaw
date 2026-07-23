@@ -31,6 +31,8 @@ from .audit import TARGET_ENV
 from .category import Arrow, arrow, identity
 from .comparison import Comparison
 from .domains import DependentDomain, Domain, generation_order
+from .exclusion import Exclusion
+from .outcome import Outcome
 from .refusal import Refusal
 from .replay import (
     MODE_ENV,
@@ -181,7 +183,7 @@ class Equation(Generic[Observation]):
             )
 
 
-LawResult = Equation[Any] | Comparison | Refusal | bool | None
+LawResult = Equation[Any] | Comparison | Refusal | Outcome | Exclusion | bool | None
 LawFunction = Callable[..., LawResult]
 
 
@@ -658,6 +660,15 @@ def _decorate_law(
             elif isinstance(result, Refusal):
                 # tlaw performed this call, so the failure can say whether
                 # the wrong exception was raised or a value came back.
+                result.check(description)
+            elif isinstance(result, Outcome):
+                # Railway code returns its failure branch instead of
+                # raising it; the failure can still name which branch came
+                # back, or that the call raised instead.
+                result.check(description)
+            elif isinstance(result, Exclusion):
+                # tlaw searched this value, so the failure can name the
+                # fragment that leaked and where it was found.
                 result.check(description)
             elif result is False:
                 raise AssertionError(f"law failed: {description}")

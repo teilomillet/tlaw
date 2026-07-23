@@ -54,6 +54,14 @@ def _pytest_command(law_path: Path) -> tuple[str, ...]:
         "no:cacheprovider",
         "-p",
         "tlaw.pytest_plugin",
+        # The target project's ``addopts`` are cleared, not inherited. tlaw
+        # owns this invocation and disables third-party plugin autoload, so
+        # an inherited flag from a plugin that is now absent (``-n`` from
+        # xdist, for instance) turns every check into a pytest usage error.
+        # Probing a codebase must not require editing that codebase, so the
+        # conflict is resolved here rather than in the target's config.
+        "-o",
+        "addopts=",
         law_path.name,
     )
 
@@ -92,14 +100,20 @@ def _public_report(
         failures.append(failure)
     failures.sort(key=lambda failure: failure["identity"])
 
-    invalid = [
+    # A counterexample that cannot be encoded is a limit of the *evidence*,
+    # never a claim about the code under law: `capture_error` is only ever
+    # "this input type has no safe replay encoding". Reporting the run as
+    # invalid because of it would erase the thing tlaw actually established
+    # — that the law was refuted — so the two facts are kept apart. The
+    # refutation decides `status`; retention is its own field.
+    unretained = [
         failure["capture_error"]
         for failure in failures
         if failure.get("capture_error") is not None
     ]
     if pytest_exit_code == 0:
         status = "passed"
-    elif pytest_exit_code == 1 and failures and not invalid:
+    elif pytest_exit_code == 1 and failures:
         status = "failed"
     else:
         status = "invalid"
@@ -114,6 +128,11 @@ def _public_report(
         "summary": {
             "failures": len(failures),
             "status": status,
+            # False when at least one retained failure has no replayable
+            # inputs. Separate from `status` so "the law was refuted" and
+            # "the counterexample could not be retained" never overwrite
+            # each other.
+            "retained": not unretained,
         },
         "failures": failures,
     }
@@ -223,7 +242,10 @@ def check(
         if failure.get("capture_error") is not None
     ]
     if capture_errors:
-        output += "\ntlaw: counterexample is invalid replay evidence:\n"
+        output += (
+            "\ntlaw: the law above was refuted, but this counterexample "
+            "cannot be retained for replay:\n"
+        )
         output += "\n".join(f"  {message}" for message in capture_errors)
         output += "\n"
 

@@ -120,8 +120,10 @@ Rewards = tlaw.list_of(Reward, min_size=1)
 
 `number` generates finite floats between inclusive bounds, `integer` generates
 bounded counts, `one_of` states a finite set, `list_of` composes a domain or
-ordinary type with visible size bounds, and `depends` derives a domain from
-already drawn parameters. Their descriptions appear in `--explain`.
+ordinary type with visible size bounds, `record` composes named fields into a
+dictionary or a constructed value, and `depends` derives a domain from
+already drawn parameters. Their descriptions appear in `--explain`, nested
+records included.
 
 A law that needs retained values, nested comparison, arrays, or float tolerance
 may return:
@@ -129,6 +131,20 @@ may return:
 ```python
 return tlaw.same(actual, expected, within=1e-12, relative=1e-9)
 ```
+
+A law about code that returns its failure instead of raising it, that is
+`async`, or that must not leak an internal detail may return:
+
+```python
+return tlaw.returns(Err, resolve, request, resolver).and_then(
+    lambda failure: tlaw.excludes(failure, hostname)
+)
+```
+
+`returns` is the dual of `raises` for railway code, both await an `async`
+target, and `and_then` chains a second claim without collapsing the first
+into a bare boolean. `excludes` states non-leakage structurally and reports
+where a fragment was found.
 
 `within` is absolute tolerance near zero; `relative` scales with the larger
 magnitude. Both default to zero, so exact comparison remains the default.
@@ -268,10 +284,17 @@ The remaining interface is not settled for:
 
 - mutation of more than one implementation module or non-Python boundaries;
 - external effects and mutable state not represented by explicit paths;
-- domain predicates beyond numeric ranges, finite choices, lists, and declared
-  dependencies;
-- domains nested inside dictionaries, tuples, custom classes, or other
-  unsupported positions;
+- domain predicates beyond numeric ranges, finite choices, lists, records, and
+  declared dependencies;
+- relations reaching across scopes, since a record's `depends` names sibling
+  fields and a law's `depends` names law parameters, and neither crosses;
+- domains written directly inside `dict[...]`, `tuple[...]`, or other
+  unsupported annotation positions, which `record` replaces rather than
+  extends;
+- observing that a collaborator was *not* called. This is a decided non-goal:
+  tlaw sequences the calls a law makes and does not spy. Effect-absence is
+  stated by injecting a double, whose signal must be a `BaseException`
+  subclass when the code under law catches `Exception` broadly;
 - configurable NaN equality;
 - opt-in third-party pytest plugins;
 - existing pipelines whose steps are not explicitly composed in tlaw;

@@ -1,0 +1,1081 @@
+{
+  "baseline": {
+    "duration_seconds": 2.4657336250002118,
+    "exit_code": 0,
+    "timed_out": false,
+    "valid": true
+  },
+  "boundary": {
+    "kind": "package",
+    "module": "backend.verification.profile.resolve"
+  },
+  "budget": {
+    "floor_seconds": 5.0,
+    "multiplier": 10.0,
+    "seconds": 24.657336250002118
+  },
+  "canary": {
+    "duration_seconds": 2.101393625000128,
+    "exit_code": 1,
+    "note": "canary run exit code 1",
+    "timed_out": false,
+    "wired": true
+  },
+  "implementation": "/Users/teilo.millet/Work/anef_mvp/backend/verification/profile/resolve.py",
+  "laws": "/Users/teilo.millet/Private/Code/tlaw/probes/anef/laws.py",
+  "mutations": [
+    {
+      "description": "_fields: replace not fields with not not fields",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 2d9edc8b4dcb\n@@ -38,7 +38,7 @@\n         ``amount/currency`` appends ``FIELD_UNSUPPORTED`` when capabilities contain\n         only ``text``. The candidate tuple itself is never rewritten.\n     \"\"\"\n-    if not fields:\n+    if not not fields:\n         issues.append(ResolveIssue(ResolveCode.FIELDS_EMPTY, document))\n         return\n     seen: set[FieldId] = set()",
+      "duration_seconds": 2.2456652910004777,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::resolver_cancellation_propagates",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "2d9edc8b4dcb",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_fields",
+      "timed_out": false
+    },
+    {
+      "description": "_fields: replace issues.append(ResolveIssue(ResolveCode.FIELDS_EMPTY, document)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant d36d7f903356\n@@ -39,7 +39,7 @@\n         only ``text``. The candidate tuple itself is never rewritten.\n     \"\"\"\n     if not fields:\n-        issues.append(ResolveIssue(ResolveCode.FIELDS_EMPTY, document))\n+        pass\n         return\n     seen: set[FieldId] = set()\n     for field in fields:",
+      "duration_seconds": 1.9605184590000135,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "d36d7f903356",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "_fields",
+      "timed_out": false
+    },
+    {
+      "description": "_fields: replace len(str(field.id)) <= limits.max_identifier_length with len(str(field.id)) < limits.max_identifier_length",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 6e5dea0e7d2e\n@@ -44,7 +44,7 @@\n     seen: set[FieldId] = set()\n     for field in fields:\n         valid = identifier(str(field.id)) and identifier(str(field.kind))\n-        bounded = len(str(field.id)) <= limits.max_identifier_length and len(str(field.kind)) <= limits.max_identifier_length\n+        bounded = len(str(field.id)) < limits.max_identifier_length and len(str(field.kind)) <= limits.max_identifier_length\n         if not valid or not bounded:\n             issues.append(ResolveIssue(ResolveCode.FIELD_INVALID, document))\n         if field.id in seen:",
+      "duration_seconds": 2.0656832499989832,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "6e5dea0e7d2e",
+      "note": "all laws passed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "survived",
+      "qualname": "_fields",
+      "timed_out": false
+    },
+    {
+      "description": "_fields: replace len(str(field.kind)) <= limits.max_identifier_length with len(str(field.kind)) < limits.max_identifier_length",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant fc2328da5fdc\n@@ -44,7 +44,7 @@\n     seen: set[FieldId] = set()\n     for field in fields:\n         valid = identifier(str(field.id)) and identifier(str(field.kind))\n-        bounded = len(str(field.id)) <= limits.max_identifier_length and len(str(field.kind)) <= limits.max_identifier_length\n+        bounded = len(str(field.id)) <= limits.max_identifier_length and len(str(field.kind)) < limits.max_identifier_length\n         if not valid or not bounded:\n             issues.append(ResolveIssue(ResolveCode.FIELD_INVALID, document))\n         if field.id in seen:",
+      "duration_seconds": 1.9590046250013984,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "fc2328da5fdc",
+      "note": "all laws passed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "survived",
+      "qualname": "_fields",
+      "timed_out": false
+    },
+    {
+      "description": "_fields: replace not valid or not bounded with not (not valid or not bounded)",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant af680679475e\n@@ -45,7 +45,7 @@\n     for field in fields:\n         valid = identifier(str(field.id)) and identifier(str(field.kind))\n         bounded = len(str(field.id)) <= limits.max_identifier_length and len(str(field.kind)) <= limits.max_identifier_length\n-        if not valid or not bounded:\n+        if not (not valid or not bounded):\n             issues.append(ResolveIssue(ResolveCode.FIELD_INVALID, document))\n         if field.id in seen:\n             issues.append(ResolveIssue(ResolveCode.FIELD_DUPLICATE, document))",
+      "duration_seconds": 2.2265122909993806,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::resolver_cancellation_propagates",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "af680679475e",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_fields",
+      "timed_out": false
+    },
+    {
+      "description": "_fields: replace issues.append(ResolveIssue(ResolveCode.FIELD_INVALID, document)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 906da9c287d2\n@@ -46,7 +46,7 @@\n         valid = identifier(str(field.id)) and identifier(str(field.kind))\n         bounded = len(str(field.id)) <= limits.max_identifier_length and len(str(field.kind)) <= limits.max_identifier_length\n         if not valid or not bounded:\n-            issues.append(ResolveIssue(ResolveCode.FIELD_INVALID, document))\n+            pass\n         if field.id in seen:\n             issues.append(ResolveIssue(ResolveCode.FIELD_DUPLICATE, document))\n         seen.add(field.id)",
+      "duration_seconds": 2.014576624998881,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "906da9c287d2",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "_fields",
+      "timed_out": false
+    },
+    {
+      "description": "_fields: replace field.id in seen with not field.id in seen",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 3562814c61e1\n@@ -47,7 +47,7 @@\n         bounded = len(str(field.id)) <= limits.max_identifier_length and len(str(field.kind)) <= limits.max_identifier_length\n         if not valid or not bounded:\n             issues.append(ResolveIssue(ResolveCode.FIELD_INVALID, document))\n-        if field.id in seen:\n+        if not field.id in seen:\n             issues.append(ResolveIssue(ResolveCode.FIELD_DUPLICATE, document))\n         seen.add(field.id)\n         if field.kind not in capabilities.field_kinds:",
+      "duration_seconds": 2.029380374999164,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::resolver_cancellation_propagates",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "3562814c61e1",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_fields",
+      "timed_out": false
+    },
+    {
+      "description": "_fields: replace issues.append(ResolveIssue(ResolveCode.FIELD_DUPLICATE, document)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 46b6e1cf800a\n@@ -48,7 +48,7 @@\n         if not valid or not bounded:\n             issues.append(ResolveIssue(ResolveCode.FIELD_INVALID, document))\n         if field.id in seen:\n-            issues.append(ResolveIssue(ResolveCode.FIELD_DUPLICATE, document))\n+            pass\n         seen.add(field.id)\n         if field.kind not in capabilities.field_kinds:\n             issues.append(ResolveIssue(ResolveCode.FIELD_UNSUPPORTED, document))",
+      "duration_seconds": 1.7849515830002929,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "46b6e1cf800a",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "_fields",
+      "timed_out": false
+    },
+    {
+      "description": "_fields: replace seen.add(field.id) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant e1758ac7bebf\n@@ -49,7 +49,7 @@\n             issues.append(ResolveIssue(ResolveCode.FIELD_INVALID, document))\n         if field.id in seen:\n             issues.append(ResolveIssue(ResolveCode.FIELD_DUPLICATE, document))\n-        seen.add(field.id)\n+        pass\n         if field.kind not in capabilities.field_kinds:\n             issues.append(ResolveIssue(ResolveCode.FIELD_UNSUPPORTED, document))\n ",
+      "duration_seconds": 2.243469417000597,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "e1758ac7bebf",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "_fields",
+      "timed_out": false
+    },
+    {
+      "description": "_fields: replace field.kind not in capabilities.field_kinds with not field.kind not in capabilities.field_kinds",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant f4e6b3dda1fd\n@@ -50,7 +50,7 @@\n         if field.id in seen:\n             issues.append(ResolveIssue(ResolveCode.FIELD_DUPLICATE, document))\n         seen.add(field.id)\n-        if field.kind not in capabilities.field_kinds:\n+        if not field.kind not in capabilities.field_kinds:\n             issues.append(ResolveIssue(ResolveCode.FIELD_UNSUPPORTED, document))\n \n def _definitions(fields: tuple[FieldId, ...], document: DocumentId, field_catalog: FieldCatalog, issues: list[ResolveIssue], /) -> tuple[FieldSpec, ...]:",
+      "duration_seconds": 2.239361875001123,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::resolver_cancellation_propagates",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "f4e6b3dda1fd",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_fields",
+      "timed_out": false
+    },
+    {
+      "description": "_fields: replace issues.append(ResolveIssue(ResolveCode.FIELD_UNSUPPORTED, document)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 424f73752b23\n@@ -51,7 +51,7 @@\n             issues.append(ResolveIssue(ResolveCode.FIELD_DUPLICATE, document))\n         seen.add(field.id)\n         if field.kind not in capabilities.field_kinds:\n-            issues.append(ResolveIssue(ResolveCode.FIELD_UNSUPPORTED, document))\n+            pass\n \n def _definitions(fields: tuple[FieldId, ...], document: DocumentId, field_catalog: FieldCatalog, issues: list[ResolveIssue], /) -> tuple[FieldSpec, ...]:\n     \"\"\"Resolve selected IDs through the one process-independent field catalog.",
+      "duration_seconds": 1.5974620840006537,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "424f73752b23",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "_fields",
+      "timed_out": false
+    },
+    {
+      "description": "_definitions: replace definition is None with not definition is None",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 8021c898c73e\n@@ -79,7 +79,7 @@\n     resolved: list[FieldSpec] = []\n     for field in fields:\n         definition = field_catalog.get(field)\n-        if definition is None:\n+        if not definition is None:\n             issues.append(ResolveIssue(ResolveCode.FIELD_UNKNOWN, document))\n         else:\n             resolved.append(definition)",
+      "duration_seconds": 2.13480250000066,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::an_unknown_field_stays_caller_attributable",
+        "laws.py::resolver_cancellation_propagates",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "8021c898c73e",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_definitions",
+      "timed_out": false
+    },
+    {
+      "description": "_definitions: replace issues.append(ResolveIssue(ResolveCode.FIELD_UNKNOWN, document)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant d19094dc2bd1\n@@ -80,7 +80,7 @@\n     for field in fields:\n         definition = field_catalog.get(field)\n         if definition is None:\n-            issues.append(ResolveIssue(ResolveCode.FIELD_UNKNOWN, document))\n+            pass\n         else:\n             resolved.append(definition)\n     return tuple(resolved)",
+      "duration_seconds": 1.994776790999822,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::an_unknown_field_stays_caller_attributable"
+      ],
+      "id": "d19094dc2bd1",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "skip-call-statement",
+      "outcome": "killed",
+      "qualname": "_definitions",
+      "timed_out": false
+    },
+    {
+      "description": "_definitions: replace resolved.append(definition) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 8c4d43deb70c\n@@ -82,7 +82,7 @@\n         if definition is None:\n             issues.append(ResolveIssue(ResolveCode.FIELD_UNKNOWN, document))\n         else:\n-            resolved.append(definition)\n+            pass\n     return tuple(resolved)\n \n def _profile(profile: VerificationProfile, key: ProfileKey, document: DocumentId, limits: Limits, issues: list[ResolveIssue], /) -> None:",
+      "duration_seconds": 2.820290790999934,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::resolver_cancellation_propagates",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "8c4d43deb70c",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "skip-call-statement",
+      "outcome": "killed",
+      "qualname": "_definitions",
+      "timed_out": false
+    },
+    {
+      "description": "_profile: replace len(str(reference.id)) <= limits.max_identifier_length with len(str(reference.id)) < limits.max_identifier_length",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant ee2478c4c401\n@@ -105,7 +105,7 @@\n         enough to silently use the wrong rules.\n     \"\"\"\n     reference = profile.reference\n-    valid = identifier(str(reference.id)) and version(str(reference.version)) and (len(str(reference.id)) <= limits.max_identifier_length) and (len(str(reference.version)) <= limits.max_identifier_length)\n+    valid = identifier(str(reference.id)) and version(str(reference.version)) and (len(str(reference.id)) < limits.max_identifier_length) and (len(str(reference.version)) <= limits.max_identifier_length)\n     if not valid:\n         issues.append(ResolveIssue(ResolveCode.PROFILE_INVALID, document))\n     if profile.document_type != key.document_type:",
+      "duration_seconds": 1.9884134580006503,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "ee2478c4c401",
+      "note": "all laws passed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "survived",
+      "qualname": "_profile",
+      "timed_out": false
+    },
+    {
+      "description": "_profile: replace len(str(reference.version)) <= limits.max_identifier_length with len(str(reference.version)) < limits.max_identifier_length",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 6f93269d6f45\n@@ -105,7 +105,7 @@\n         enough to silently use the wrong rules.\n     \"\"\"\n     reference = profile.reference\n-    valid = identifier(str(reference.id)) and version(str(reference.version)) and (len(str(reference.id)) <= limits.max_identifier_length) and (len(str(reference.version)) <= limits.max_identifier_length)\n+    valid = identifier(str(reference.id)) and version(str(reference.version)) and (len(str(reference.id)) <= limits.max_identifier_length) and (len(str(reference.version)) < limits.max_identifier_length)\n     if not valid:\n         issues.append(ResolveIssue(ResolveCode.PROFILE_INVALID, document))\n     if profile.document_type != key.document_type:",
+      "duration_seconds": 1.8802783749997616,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "6f93269d6f45",
+      "note": "all laws passed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "survived",
+      "qualname": "_profile",
+      "timed_out": false
+    },
+    {
+      "description": "_profile: replace not valid with not not valid",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 544de13c5a1c\n@@ -106,7 +106,7 @@\n     \"\"\"\n     reference = profile.reference\n     valid = identifier(str(reference.id)) and version(str(reference.version)) and (len(str(reference.id)) <= limits.max_identifier_length) and (len(str(reference.version)) <= limits.max_identifier_length)\n-    if not valid:\n+    if not not valid:\n         issues.append(ResolveIssue(ResolveCode.PROFILE_INVALID, document))\n     if profile.document_type != key.document_type:\n         issues.append(ResolveIssue(ResolveCode.PROFILE_TYPE, document))",
+      "duration_seconds": 2.636581875000047,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "544de13c5a1c",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_profile",
+      "timed_out": false
+    },
+    {
+      "description": "_profile: replace issues.append(ResolveIssue(ResolveCode.PROFILE_INVALID, document)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant a6ec19175918\n@@ -107,7 +107,7 @@\n     reference = profile.reference\n     valid = identifier(str(reference.id)) and version(str(reference.version)) and (len(str(reference.id)) <= limits.max_identifier_length) and (len(str(reference.version)) <= limits.max_identifier_length)\n     if not valid:\n-        issues.append(ResolveIssue(ResolveCode.PROFILE_INVALID, document))\n+        pass\n     if profile.document_type != key.document_type:\n         issues.append(ResolveIssue(ResolveCode.PROFILE_TYPE, document))\n     if profile.verification_type != key.verification_type:",
+      "duration_seconds": 2.8964087499989546,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "a6ec19175918",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "_profile",
+      "timed_out": false
+    },
+    {
+      "description": "_profile: replace profile.document_type != key.document_type with not profile.document_type != key.document_type",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant ac37ff1d1efb\n@@ -108,7 +108,7 @@\n     valid = identifier(str(reference.id)) and version(str(reference.version)) and (len(str(reference.id)) <= limits.max_identifier_length) and (len(str(reference.version)) <= limits.max_identifier_length)\n     if not valid:\n         issues.append(ResolveIssue(ResolveCode.PROFILE_INVALID, document))\n-    if profile.document_type != key.document_type:\n+    if not profile.document_type != key.document_type:\n         issues.append(ResolveIssue(ResolveCode.PROFILE_TYPE, document))\n     if profile.verification_type != key.verification_type:\n         issues.append(ResolveIssue(ResolveCode.PROFILE_CONTEXT, document))",
+      "duration_seconds": 1.6392510000005132,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "ac37ff1d1efb",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_profile",
+      "timed_out": false
+    },
+    {
+      "description": "_profile: replace issues.append(ResolveIssue(ResolveCode.PROFILE_TYPE, document)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant f8ef1e7c8d09\n@@ -109,7 +109,7 @@\n     if not valid:\n         issues.append(ResolveIssue(ResolveCode.PROFILE_INVALID, document))\n     if profile.document_type != key.document_type:\n-        issues.append(ResolveIssue(ResolveCode.PROFILE_TYPE, document))\n+        pass\n     if profile.verification_type != key.verification_type:\n         issues.append(ResolveIssue(ResolveCode.PROFILE_CONTEXT, document))\n ",
+      "duration_seconds": 1.373519540999041,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "f8ef1e7c8d09",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "_profile",
+      "timed_out": false
+    },
+    {
+      "description": "_profile: replace profile.verification_type != key.verification_type with not profile.verification_type != key.verification_type",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 0402d19bf2e2\n@@ -110,7 +110,7 @@\n         issues.append(ResolveIssue(ResolveCode.PROFILE_INVALID, document))\n     if profile.document_type != key.document_type:\n         issues.append(ResolveIssue(ResolveCode.PROFILE_TYPE, document))\n-    if profile.verification_type != key.verification_type:\n+    if not profile.verification_type != key.verification_type:\n         issues.append(ResolveIssue(ResolveCode.PROFILE_CONTEXT, document))\n \n async def _lookup(resolver: ProfileResolver, key: ProfileKey, /) -> Result[VerificationProfile, ResolveFailure]:",
+      "duration_seconds": 1.812688124999113,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "0402d19bf2e2",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_profile",
+      "timed_out": false
+    },
+    {
+      "description": "_profile: replace issues.append(ResolveIssue(ResolveCode.PROFILE_CONTEXT, document)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 90f23086e388\n@@ -111,7 +111,7 @@\n     if profile.document_type != key.document_type:\n         issues.append(ResolveIssue(ResolveCode.PROFILE_TYPE, document))\n     if profile.verification_type != key.verification_type:\n-        issues.append(ResolveIssue(ResolveCode.PROFILE_CONTEXT, document))\n+        pass\n \n async def _lookup(resolver: ProfileResolver, key: ProfileKey, /) -> Result[VerificationProfile, ResolveFailure]:\n     \"\"\"Call one profile adapter without leaking its unexpected exceptions.",
+      "duration_seconds": 1.5962160420003784,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "90f23086e388",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "_profile",
+      "timed_out": false
+    },
+    {
+      "description": "_bind: replace field.source == DOCUMENT_SOURCE with not field.source == DOCUMENT_SOURCE",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 34b6a6d5ca0f\n@@ -159,7 +159,7 @@\n         ``FieldRef(SourceId(\"certificate\"), \"full_name\")``. An applicant operand\n         passes through unchanged.\n     \"\"\"\n-    if field.source == DOCUMENT_SOURCE:\n+    if not field.source == DOCUMENT_SOURCE:\n         return FieldRef(SourceId(str(document)), field.field)\n     return field\n ",
+      "duration_seconds": 2.256859749999421,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "34b6a6d5ca0f",
+      "note": "all laws passed",
+      "operator": "negate-condition",
+      "outcome": "survived",
+      "qualname": "_bind",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace check_id in seen with not check_id in seen",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant e99ccdce38ac\n@@ -198,7 +198,7 @@\n     bound: list[CheckSpec] = []\n     for check in checks:\n         check_id = str(check.id)\n-        if check_id in seen:\n+        if not check_id in seen:\n             issues.append(ResolveIssue(ResolveCode.CHECK_DUPLICATE, document))\n         seen.add(check_id)\n         operands = (check.left, check.right)",
+      "duration_seconds": 1.6350492500005203,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "e99ccdce38ac",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace issues.append(ResolveIssue(ResolveCode.CHECK_DUPLICATE, document)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 95cd4ff9bec9\n@@ -199,7 +199,7 @@\n     for check in checks:\n         check_id = str(check.id)\n         if check_id in seen:\n-            issues.append(ResolveIssue(ResolveCode.CHECK_DUPLICATE, document))\n+            pass\n         seen.add(check_id)\n         operands = (check.left, check.right)\n         valid = identifier(check_id) and len(check_id) <= limits.max_identifier_length",
+      "duration_seconds": 1.7633011249999981,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "95cd4ff9bec9",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace seen.add(check_id) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant c991d868ebfc\n@@ -200,7 +200,7 @@\n         check_id = str(check.id)\n         if check_id in seen:\n             issues.append(ResolveIssue(ResolveCode.CHECK_DUPLICATE, document))\n-        seen.add(check_id)\n+        pass\n         operands = (check.left, check.right)\n         valid = identifier(check_id) and len(check_id) <= limits.max_identifier_length\n         if check.left == check.right:",
+      "duration_seconds": 1.7073577080009272,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "c991d868ebfc",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace len(check_id) <= limits.max_identifier_length with len(check_id) < limits.max_identifier_length",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 652468b835c2\n@@ -202,7 +202,7 @@\n             issues.append(ResolveIssue(ResolveCode.CHECK_DUPLICATE, document))\n         seen.add(check_id)\n         operands = (check.left, check.right)\n-        valid = identifier(check_id) and len(check_id) <= limits.max_identifier_length\n+        valid = identifier(check_id) and len(check_id) < limits.max_identifier_length\n         if check.left == check.right:\n             issues.append(ResolveIssue(ResolveCode.CHECK_SELF, document))\n         document_operands = tuple((operand for operand in operands if operand.source == DOCUMENT_SOURCE))",
+      "duration_seconds": 4.002388792001511,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "652468b835c2",
+      "note": "all laws passed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "survived",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace check.left == check.right with not check.left == check.right",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 945afba334cc\n@@ -203,7 +203,7 @@\n         seen.add(check_id)\n         operands = (check.left, check.right)\n         valid = identifier(check_id) and len(check_id) <= limits.max_identifier_length\n-        if check.left == check.right:\n+        if not check.left == check.right:\n             issues.append(ResolveIssue(ResolveCode.CHECK_SELF, document))\n         document_operands = tuple((operand for operand in operands if operand.source == DOCUMENT_SOURCE))\n         if len(document_operands) != 1:",
+      "duration_seconds": 1.8341342500007158,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "945afba334cc",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace issues.append(ResolveIssue(ResolveCode.CHECK_SELF, document)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 005bd45a6587\n@@ -204,7 +204,7 @@\n         operands = (check.left, check.right)\n         valid = identifier(check_id) and len(check_id) <= limits.max_identifier_length\n         if check.left == check.right:\n-            issues.append(ResolveIssue(ResolveCode.CHECK_SELF, document))\n+            pass\n         document_operands = tuple((operand for operand in operands if operand.source == DOCUMENT_SOURCE))\n         if len(document_operands) != 1:\n             issues.append(ResolveIssue(ResolveCode.CHECK_SOURCE, document))",
+      "duration_seconds": 2.3692902920010965,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "005bd45a6587",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace len(document_operands) != 1 with not len(document_operands) != 1",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant be58a321dfa0\n@@ -206,7 +206,7 @@\n         if check.left == check.right:\n             issues.append(ResolveIssue(ResolveCode.CHECK_SELF, document))\n         document_operands = tuple((operand for operand in operands if operand.source == DOCUMENT_SOURCE))\n-        if len(document_operands) != 1:\n+        if not len(document_operands) != 1:\n             issues.append(ResolveIssue(ResolveCode.CHECK_SOURCE, document))\n         if check.left.field != check.right.field:\n             issues.append(ResolveIssue(ResolveCode.CHECK_FIELD, document))",
+      "duration_seconds": 2.1609719169991877,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "be58a321dfa0",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace issues.append(ResolveIssue(ResolveCode.CHECK_SOURCE, document)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant df750143f201\n@@ -207,7 +207,7 @@\n             issues.append(ResolveIssue(ResolveCode.CHECK_SELF, document))\n         document_operands = tuple((operand for operand in operands if operand.source == DOCUMENT_SOURCE))\n         if len(document_operands) != 1:\n-            issues.append(ResolveIssue(ResolveCode.CHECK_SOURCE, document))\n+            pass\n         if check.left.field != check.right.field:\n             issues.append(ResolveIssue(ResolveCode.CHECK_FIELD, document))\n         for operand in operands:",
+      "duration_seconds": 1.7237515420001728,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "df750143f201",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace check.left.field != check.right.field with not check.left.field != check.right.field",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 52f4462dfd98\n@@ -208,7 +208,7 @@\n         document_operands = tuple((operand for operand in operands if operand.source == DOCUMENT_SOURCE))\n         if len(document_operands) != 1:\n             issues.append(ResolveIssue(ResolveCode.CHECK_SOURCE, document))\n-        if check.left.field != check.right.field:\n+        if not check.left.field != check.right.field:\n             issues.append(ResolveIssue(ResolveCode.CHECK_FIELD, document))\n         for operand in operands:\n             operand_valid = identifier(str(operand.source)) and identifier(str(operand.field)) and (len(str(operand.source)) <= limits.max_identifier_length) and (len(str(operand.field)) <= limits.max_identifier_length)",
+      "duration_seconds": 2.0310218340000574,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "52f4462dfd98",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace issues.append(ResolveIssue(ResolveCode.CHECK_FIELD, document)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant c689184050b2\n@@ -209,7 +209,7 @@\n         if len(document_operands) != 1:\n             issues.append(ResolveIssue(ResolveCode.CHECK_SOURCE, document))\n         if check.left.field != check.right.field:\n-            issues.append(ResolveIssue(ResolveCode.CHECK_FIELD, document))\n+            pass\n         for operand in operands:\n             operand_valid = identifier(str(operand.source)) and identifier(str(operand.field)) and (len(str(operand.source)) <= limits.max_identifier_length) and (len(str(operand.field)) <= limits.max_identifier_length)\n             if not operand_valid:",
+      "duration_seconds": 1.928262374998667,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "c689184050b2",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace len(str(operand.source)) <= limits.max_identifier_length with len(str(operand.source)) < limits.max_identifier_length",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant ae094d9e7b52\n@@ -211,7 +211,7 @@\n         if check.left.field != check.right.field:\n             issues.append(ResolveIssue(ResolveCode.CHECK_FIELD, document))\n         for operand in operands:\n-            operand_valid = identifier(str(operand.source)) and identifier(str(operand.field)) and (len(str(operand.source)) <= limits.max_identifier_length) and (len(str(operand.field)) <= limits.max_identifier_length)\n+            operand_valid = identifier(str(operand.source)) and identifier(str(operand.field)) and (len(str(operand.source)) < limits.max_identifier_length) and (len(str(operand.field)) <= limits.max_identifier_length)\n             if not operand_valid:\n                 valid = False\n             if operand.source == DOCUMENT_SOURCE:",
+      "duration_seconds": 2.0674791669989645,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "ae094d9e7b52",
+      "note": "all laws passed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "survived",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace len(str(operand.field)) <= limits.max_identifier_length with len(str(operand.field)) < limits.max_identifier_length",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant b1ea4521212e\n@@ -211,7 +211,7 @@\n         if check.left.field != check.right.field:\n             issues.append(ResolveIssue(ResolveCode.CHECK_FIELD, document))\n         for operand in operands:\n-            operand_valid = identifier(str(operand.source)) and identifier(str(operand.field)) and (len(str(operand.source)) <= limits.max_identifier_length) and (len(str(operand.field)) <= limits.max_identifier_length)\n+            operand_valid = identifier(str(operand.source)) and identifier(str(operand.field)) and (len(str(operand.source)) <= limits.max_identifier_length) and (len(str(operand.field)) < limits.max_identifier_length)\n             if not operand_valid:\n                 valid = False\n             if operand.source == DOCUMENT_SOURCE:",
+      "duration_seconds": 1.8504627909987903,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "b1ea4521212e",
+      "note": "all laws passed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "survived",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace not operand_valid with not not operand_valid",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 86dab9b1e298\n@@ -212,7 +212,7 @@\n             issues.append(ResolveIssue(ResolveCode.CHECK_FIELD, document))\n         for operand in operands:\n             operand_valid = identifier(str(operand.source)) and identifier(str(operand.field)) and (len(str(operand.source)) <= limits.max_identifier_length) and (len(str(operand.field)) <= limits.max_identifier_length)\n-            if not operand_valid:\n+            if not not operand_valid:\n                 valid = False\n             if operand.source == DOCUMENT_SOURCE:\n                 if operand.field not in field_ids:",
+      "duration_seconds": 1.8514219999997295,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "86dab9b1e298",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace operand.source == DOCUMENT_SOURCE with not operand.source == DOCUMENT_SOURCE",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 74e650f6d779\n@@ -214,7 +214,7 @@\n             operand_valid = identifier(str(operand.source)) and identifier(str(operand.field)) and (len(str(operand.source)) <= limits.max_identifier_length) and (len(str(operand.field)) <= limits.max_identifier_length)\n             if not operand_valid:\n                 valid = False\n-            if operand.source == DOCUMENT_SOURCE:\n+            if not operand.source == DOCUMENT_SOURCE:\n                 if operand.field not in field_ids:\n                     issues.append(ResolveIssue(ResolveCode.CHECK_FIELD_MISSING, document))\n             else:",
+      "duration_seconds": 1.8327291249988775,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "74e650f6d779",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace operand.field not in field_ids with not operand.field not in field_ids",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 5edc5ba9fb17\n@@ -215,7 +215,7 @@\n             if not operand_valid:\n                 valid = False\n             if operand.source == DOCUMENT_SOURCE:\n-                if operand.field not in field_ids:\n+                if not operand.field not in field_ids:\n                     issues.append(ResolveIssue(ResolveCode.CHECK_FIELD_MISSING, document))\n             else:\n                 claim_fields = claims.get(operand.source)",
+      "duration_seconds": 1.4896867499992368,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "5edc5ba9fb17",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace issues.append(ResolveIssue(ResolveCode.CHECK_FIELD_MISSING, document)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 0213d811c357\n@@ -216,7 +216,7 @@\n                 valid = False\n             if operand.source == DOCUMENT_SOURCE:\n                 if operand.field not in field_ids:\n-                    issues.append(ResolveIssue(ResolveCode.CHECK_FIELD_MISSING, document))\n+                    pass\n             else:\n                 claim_fields = claims.get(operand.source)\n                 if claim_fields is None or operand.field not in claim_fields:",
+      "duration_seconds": 1.610191666000901,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "0213d811c357",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace claim_fields is None or operand.field not in claim_fields with not (claim_fields is None or operand.field not in claim_fields)",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 6f233af9194c\n@@ -219,7 +219,7 @@\n                     issues.append(ResolveIssue(ResolveCode.CHECK_FIELD_MISSING, document))\n             else:\n                 claim_fields = claims.get(operand.source)\n-                if claim_fields is None or operand.field not in claim_fields:\n+                if not (claim_fields is None or operand.field not in claim_fields):\n                     issues.append(ResolveIssue(ResolveCode.CHECK_CLAIM_MISSING, document))\n         if not valid:\n             issues.append(ResolveIssue(ResolveCode.CHECK_INVALID, document))",
+      "duration_seconds": 1.571166292000271,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "6f233af9194c",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace issues.append(ResolveIssue(ResolveCode.CHECK_CLAIM_MISSING, document)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant f1829f11ac26\n@@ -220,7 +220,7 @@\n             else:\n                 claim_fields = claims.get(operand.source)\n                 if claim_fields is None or operand.field not in claim_fields:\n-                    issues.append(ResolveIssue(ResolveCode.CHECK_CLAIM_MISSING, document))\n+                    pass\n         if not valid:\n             issues.append(ResolveIssue(ResolveCode.CHECK_INVALID, document))\n         bound.append(MatchCheck(check.id, _bind(check.left, document), _bind(check.right, document)))",
+      "duration_seconds": 2.0408396250004444,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "f1829f11ac26",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace not valid with not not valid",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 194702bfeeb2\n@@ -221,7 +221,7 @@\n                 claim_fields = claims.get(operand.source)\n                 if claim_fields is None or operand.field not in claim_fields:\n                     issues.append(ResolveIssue(ResolveCode.CHECK_CLAIM_MISSING, document))\n-        if not valid:\n+        if not not valid:\n             issues.append(ResolveIssue(ResolveCode.CHECK_INVALID, document))\n         bound.append(MatchCheck(check.id, _bind(check.left, document), _bind(check.right, document)))\n     return tuple(bound)",
+      "duration_seconds": 1.4517630409991398,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "194702bfeeb2",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace issues.append(ResolveIssue(ResolveCode.CHECK_INVALID, document)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 70826053a075\n@@ -222,7 +222,7 @@\n                 if claim_fields is None or operand.field not in claim_fields:\n                     issues.append(ResolveIssue(ResolveCode.CHECK_CLAIM_MISSING, document))\n         if not valid:\n-            issues.append(ResolveIssue(ResolveCode.CHECK_INVALID, document))\n+            pass\n         bound.append(MatchCheck(check.id, _bind(check.left, document), _bind(check.right, document)))\n     return tuple(bound)\n ",
+      "duration_seconds": 1.507778082999721,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "70826053a075",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "_checks: replace bound.append(MatchCheck(check.id, _bind(check.left, document), _bind(check.right, document))) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 44d49355c741\n@@ -223,7 +223,7 @@\n                     issues.append(ResolveIssue(ResolveCode.CHECK_CLAIM_MISSING, document))\n         if not valid:\n             issues.append(ResolveIssue(ResolveCode.CHECK_INVALID, document))\n-        bound.append(MatchCheck(check.id, _bind(check.left, document), _bind(check.right, document)))\n+        pass\n     return tuple(bound)\n \n async def resolve(request: VerificationRequest, resolver: ProfileResolver, field_catalog: FieldCatalog, capabilities: Capabilities, limits: Limits, /) -> Result[ResolvedVerificationSpec, ResolveFailure]:",
+      "duration_seconds": 1.4319981669996196,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "44d49355c741",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "_checks",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace len(request.documents) > limits.max_documents with not len(request.documents) > limits.max_documents",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 8cfe4753bd08\n@@ -287,7 +287,7 @@\n         real stage and ``submission.catalog`` is independently built from uploads.\n     \"\"\"\n     issues: list[ResolveIssue] = []\n-    if len(request.documents) > limits.max_documents:\n+    if not len(request.documents) > limits.max_documents:\n         issues.append(ResolveIssue(ResolveCode.DOCUMENT_LIMIT))\n     document_ids: set[DocumentId] = set()\n     for document in request.documents:",
+      "duration_seconds": 1.9850894999999582,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::resolver_cancellation_propagates",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "8cfe4753bd08",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace len(request.documents) > limits.max_documents with len(request.documents) >= limits.max_documents",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant a2e2656f8f75\n@@ -287,7 +287,7 @@\n         real stage and ``submission.catalog`` is independently built from uploads.\n     \"\"\"\n     issues: list[ResolveIssue] = []\n-    if len(request.documents) > limits.max_documents:\n+    if len(request.documents) >= limits.max_documents:\n         issues.append(ResolveIssue(ResolveCode.DOCUMENT_LIMIT))\n     document_ids: set[DocumentId] = set()\n     for document in request.documents:",
+      "duration_seconds": 1.3738055829999212,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "a2e2656f8f75",
+      "note": "all laws passed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "survived",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace issues.append(ResolveIssue(ResolveCode.DOCUMENT_LIMIT)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant f7c40f6a77e7\n@@ -288,7 +288,7 @@\n     \"\"\"\n     issues: list[ResolveIssue] = []\n     if len(request.documents) > limits.max_documents:\n-        issues.append(ResolveIssue(ResolveCode.DOCUMENT_LIMIT))\n+        pass\n     document_ids: set[DocumentId] = set()\n     for document in request.documents:\n         if document.id in document_ids:",
+      "duration_seconds": 1.5772657079996861,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "f7c40f6a77e7",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace document.id in document_ids with not document.id in document_ids",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 52c927518b64\n@@ -291,7 +291,7 @@\n         issues.append(ResolveIssue(ResolveCode.DOCUMENT_LIMIT))\n     document_ids: set[DocumentId] = set()\n     for document in request.documents:\n-        if document.id in document_ids:\n+        if not document.id in document_ids:\n             issues.append(ResolveIssue(ResolveCode.DOCUMENT_DUPLICATE, document.id))\n         document_ids.add(document.id)\n     document_sources = {SourceId(str(document)) for document in document_ids}",
+      "duration_seconds": 1.9016468330009957,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::resolver_cancellation_propagates",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "52c927518b64",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace issues.append(ResolveIssue(ResolveCode.DOCUMENT_DUPLICATE, document.id)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 9cec62090042\n@@ -292,7 +292,7 @@\n     document_ids: set[DocumentId] = set()\n     for document in request.documents:\n         if document.id in document_ids:\n-            issues.append(ResolveIssue(ResolveCode.DOCUMENT_DUPLICATE, document.id))\n+            pass\n         document_ids.add(document.id)\n     document_sources = {SourceId(str(document)) for document in document_ids}\n     if any((claim.id == DOCUMENT_SOURCE for claim in request.claims)):",
+      "duration_seconds": 1.6162902089999989,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "9cec62090042",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace document_ids.add(document.id) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 3360a3c6445b\n@@ -293,7 +293,7 @@\n     for document in request.documents:\n         if document.id in document_ids:\n             issues.append(ResolveIssue(ResolveCode.DOCUMENT_DUPLICATE, document.id))\n-        document_ids.add(document.id)\n+        pass\n     document_sources = {SourceId(str(document)) for document in document_ids}\n     if any((claim.id == DOCUMENT_SOURCE for claim in request.claims)):\n         issues.append(ResolveIssue(ResolveCode.SOURCE_RESERVED))",
+      "duration_seconds": 1.5897419160010031,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "3360a3c6445b",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace any((claim.id == DOCUMENT_SOURCE for claim in request.claims)) with not any((claim.id == DOCUMENT_SOURCE for claim in request.claims))",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 1f31740b7039\n@@ -295,7 +295,7 @@\n             issues.append(ResolveIssue(ResolveCode.DOCUMENT_DUPLICATE, document.id))\n         document_ids.add(document.id)\n     document_sources = {SourceId(str(document)) for document in document_ids}\n-    if any((claim.id == DOCUMENT_SOURCE for claim in request.claims)):\n+    if not any((claim.id == DOCUMENT_SOURCE for claim in request.claims)):\n         issues.append(ResolveIssue(ResolveCode.SOURCE_RESERVED))\n     if any((claim.id in document_sources for claim in request.claims)):\n         issues.append(ResolveIssue(ResolveCode.SOURCE_COLLISION))",
+      "duration_seconds": 2.370744542000466,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::resolver_cancellation_propagates",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "1f31740b7039",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace issues.append(ResolveIssue(ResolveCode.SOURCE_RESERVED)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant e8d0c5ff43d9\n@@ -296,7 +296,7 @@\n         document_ids.add(document.id)\n     document_sources = {SourceId(str(document)) for document in document_ids}\n     if any((claim.id == DOCUMENT_SOURCE for claim in request.claims)):\n-        issues.append(ResolveIssue(ResolveCode.SOURCE_RESERVED))\n+        pass\n     if any((claim.id in document_sources for claim in request.claims)):\n         issues.append(ResolveIssue(ResolveCode.SOURCE_COLLISION))\n     declared_fields = tuple(((document.id, document.fields.fields) for document in request.documents if isinstance(document.fields, DeclaredFields)))",
+      "duration_seconds": 1.8202766249996785,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "e8d0c5ff43d9",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace any((claim.id in document_sources for claim in request.claims)) with not any((claim.id in document_sources for claim in request.claims))",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 4b199d264449\n@@ -297,7 +297,7 @@\n     document_sources = {SourceId(str(document)) for document in document_ids}\n     if any((claim.id == DOCUMENT_SOURCE for claim in request.claims)):\n         issues.append(ResolveIssue(ResolveCode.SOURCE_RESERVED))\n-    if any((claim.id in document_sources for claim in request.claims)):\n+    if not any((claim.id in document_sources for claim in request.claims)):\n         issues.append(ResolveIssue(ResolveCode.SOURCE_COLLISION))\n     declared_fields = tuple(((document.id, document.fields.fields) for document in request.documents if isinstance(document.fields, DeclaredFields)))\n     declared_by_document: dict[DocumentId, tuple[FieldSpec, ...]] = {}",
+      "duration_seconds": 1.8542825410004298,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::resolver_cancellation_propagates",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "4b199d264449",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace issues.append(ResolveIssue(ResolveCode.SOURCE_COLLISION)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 452e879db4d1\n@@ -298,7 +298,7 @@\n     if any((claim.id == DOCUMENT_SOURCE for claim in request.claims)):\n         issues.append(ResolveIssue(ResolveCode.SOURCE_RESERVED))\n     if any((claim.id in document_sources for claim in request.claims)):\n-        issues.append(ResolveIssue(ResolveCode.SOURCE_COLLISION))\n+        pass\n     declared_fields = tuple(((document.id, document.fields.fields) for document in request.documents if isinstance(document.fields, DeclaredFields)))\n     declared_by_document: dict[DocumentId, tuple[FieldSpec, ...]] = {}\n     for document_id, field_ids in declared_fields:",
+      "duration_seconds": 1.5373178330009978,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "452e879db4d1",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace _fields(definitions, document_id, capabilities, limits, issues) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant cc24e393a4c1\n@@ -303,7 +303,7 @@\n     declared_by_document: dict[DocumentId, tuple[FieldSpec, ...]] = {}\n     for document_id, field_ids in declared_fields:\n         definitions = _definitions(field_ids, document_id, field_catalog, issues)\n-        _fields(definitions, document_id, capabilities, limits, issues)\n+        pass\n         declared_by_document[document_id] = definitions\n     if sum((len(fields) for _, fields in declared_fields)) > limits.max_fields:\n         issues.append(ResolveIssue(ResolveCode.FIELD_LIMIT))",
+      "duration_seconds": 2.1673087079998368,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "cc24e393a4c1",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace sum((len(fields) for _, fields in declared_fields)) > limits.max_fields with not sum((len(fields) for _, fields in declared_fields)) > limits.max_fields",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 247f429c5c78\n@@ -305,7 +305,7 @@\n         definitions = _definitions(field_ids, document_id, field_catalog, issues)\n         _fields(definitions, document_id, capabilities, limits, issues)\n         declared_by_document[document_id] = definitions\n-    if sum((len(fields) for _, fields in declared_fields)) > limits.max_fields:\n+    if not sum((len(fields) for _, fields in declared_fields)) > limits.max_fields:\n         issues.append(ResolveIssue(ResolveCode.FIELD_LIMIT))\n     if issues:\n         return Err(ResolveFailure(tuple(issues)))",
+      "duration_seconds": 2.3019829999993817,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::resolver_cancellation_propagates",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "247f429c5c78",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace sum((len(fields) for _, fields in declared_fields)) > limits.max_fields with sum((len(fields) for _, fields in declared_fields)) >= limits.max_fields",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 4c1ba376a835\n@@ -305,7 +305,7 @@\n         definitions = _definitions(field_ids, document_id, field_catalog, issues)\n         _fields(definitions, document_id, capabilities, limits, issues)\n         declared_by_document[document_id] = definitions\n-    if sum((len(fields) for _, fields in declared_fields)) > limits.max_fields:\n+    if sum((len(fields) for _, fields in declared_fields)) >= limits.max_fields:\n         issues.append(ResolveIssue(ResolveCode.FIELD_LIMIT))\n     if issues:\n         return Err(ResolveFailure(tuple(issues)))",
+      "duration_seconds": 2.3178045000004204,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::resolver_cancellation_propagates"
+      ],
+      "id": "4c1ba376a835",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "killed",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace issues.append(ResolveIssue(ResolveCode.FIELD_LIMIT)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 55b94f51fffc\n@@ -306,7 +306,7 @@\n         _fields(definitions, document_id, capabilities, limits, issues)\n         declared_by_document[document_id] = definitions\n     if sum((len(fields) for _, fields in declared_fields)) > limits.max_fields:\n-        issues.append(ResolveIssue(ResolveCode.FIELD_LIMIT))\n+        pass\n     if issues:\n         return Err(ResolveFailure(tuple(issues)))\n     keys = tuple((ProfileKey(document.type, request.verification_type) for document in request.documents))",
+      "duration_seconds": 1.5649220420000347,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "55b94f51fffc",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace issues with not issues",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 093e8f1edd79\n@@ -307,7 +307,7 @@\n         declared_by_document[document_id] = definitions\n     if sum((len(fields) for _, fields in declared_fields)) > limits.max_fields:\n         issues.append(ResolveIssue(ResolveCode.FIELD_LIMIT))\n-    if issues:\n+    if not issues:\n         return Err(ResolveFailure(tuple(issues)))\n     keys = tuple((ProfileKey(document.type, request.verification_type) for document in request.documents))\n     unique = tuple(dict.fromkeys(keys))",
+      "duration_seconds": 2.4110647500001505,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::an_adapter_fault_is_server_attributable_and_redacted",
+        "laws.py::resolver_cancellation_propagates",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "093e8f1edd79",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace isinstance(result, Err) with not isinstance(result, Err)",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 4535f24a9541\n@@ -319,7 +319,7 @@\n     total_checks = 0\n     for document, key in zip(request.documents, keys, strict=True):\n         result = by_key[key]\n-        if isinstance(result, Err):\n+        if not isinstance(result, Err):\n             issues.extend((ResolveIssue(issue.code, document.id) for issue in result.error.issues))\n             continue\n         profile = result.value",
+      "duration_seconds": 2.8130920000003243,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::an_adapter_fault_is_server_attributable_and_redacted",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "4535f24a9541",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace issues.extend((ResolveIssue(issue.code, document.id) for issue in result.error.issues)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 7a22b51de62e\n@@ -320,7 +320,7 @@\n     for document, key in zip(request.documents, keys, strict=True):\n         result = by_key[key]\n         if isinstance(result, Err):\n-            issues.extend((ResolveIssue(issue.code, document.id) for issue in result.error.issues))\n+            pass\n             continue\n         profile = result.value\n         _profile(profile, key, document.id, limits, issues)",
+      "duration_seconds": 2.471310541001003,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::an_adapter_fault_is_server_attributable_and_redacted"
+      ],
+      "id": "7a22b51de62e",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "skip-call-statement",
+      "outcome": "killed",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace _profile(profile, key, document.id, limits, issues) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 5b79ee66b7b7\n@@ -323,7 +323,7 @@\n             issues.extend((ResolveIssue(issue.code, document.id) for issue in result.error.issues))\n             continue\n         profile = result.value\n-        _profile(profile, key, document.id, limits, issues)\n+        pass\n         profile_origin = ProfileOrigin(key, profile.reference)\n         if isinstance(document.fields, DeclaredFields):\n             field_ids = document.fields.fields",
+      "duration_seconds": 1.6482297079983255,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "5b79ee66b7b7",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace isinstance(document.fields, DeclaredFields) with not isinstance(document.fields, DeclaredFields)",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 8da37921a7e4\n@@ -325,7 +325,7 @@\n         profile = result.value\n         _profile(profile, key, document.id, limits, issues)\n         profile_origin = ProfileOrigin(key, profile.reference)\n-        if isinstance(document.fields, DeclaredFields):\n+        if not isinstance(document.fields, DeclaredFields):\n             field_ids = document.fields.fields\n             fields = declared_by_document[document.id]\n             field_origin: FieldOrigin = DeclaredOrigin()",
+      "duration_seconds": 2.6560707920016284,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "8da37921a7e4",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace _fields(fields, document.id, capabilities, limits, issues) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 37224b4d007b\n@@ -333,7 +333,7 @@\n             field_ids = profile.default_fields\n             fields = _definitions(field_ids, document.id, field_catalog, issues)\n             field_origin = profile_origin\n-            _fields(fields, document.id, capabilities, limits, issues)\n+            pass\n         checks = _checks(profile.checks, fields, document.id, claim_fields, limits, issues)\n         total_fields += len(field_ids)\n         total_checks += len(checks)",
+      "duration_seconds": 1.6970665829994687,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "37224b4d007b",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace resolved_documents.append(ResolvedDocumentSpec(document.id, document.type, document.source, fields, checks, SpecOrigin(field_origin, profile_origin))) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 7335fc818aa4\n@@ -337,7 +337,7 @@\n         checks = _checks(profile.checks, fields, document.id, claim_fields, limits, issues)\n         total_fields += len(field_ids)\n         total_checks += len(checks)\n-        resolved_documents.append(ResolvedDocumentSpec(document.id, document.type, document.source, fields, checks, SpecOrigin(field_origin, profile_origin)))\n+        pass\n     if total_fields > limits.max_fields:\n         issues.append(ResolveIssue(ResolveCode.FIELD_LIMIT))\n     if total_checks > limits.max_checks:",
+      "duration_seconds": 1.9974126670003898,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared"
+      ],
+      "id": "7335fc818aa4",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "skip-call-statement",
+      "outcome": "killed",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace total_fields > limits.max_fields with not total_fields > limits.max_fields",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant feae6150197d\n@@ -338,7 +338,7 @@\n         total_fields += len(field_ids)\n         total_checks += len(checks)\n         resolved_documents.append(ResolvedDocumentSpec(document.id, document.type, document.source, fields, checks, SpecOrigin(field_origin, profile_origin)))\n-    if total_fields > limits.max_fields:\n+    if not total_fields > limits.max_fields:\n         issues.append(ResolveIssue(ResolveCode.FIELD_LIMIT))\n     if total_checks > limits.max_checks:\n         issues.append(ResolveIssue(ResolveCode.CHECK_LIMIT))",
+      "duration_seconds": 2.0324697500000184,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "feae6150197d",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace total_fields > limits.max_fields with total_fields >= limits.max_fields",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 7376dfe174d4\n@@ -338,7 +338,7 @@\n         total_fields += len(field_ids)\n         total_checks += len(checks)\n         resolved_documents.append(ResolvedDocumentSpec(document.id, document.type, document.source, fields, checks, SpecOrigin(field_origin, profile_origin)))\n-    if total_fields > limits.max_fields:\n+    if total_fields >= limits.max_fields:\n         issues.append(ResolveIssue(ResolveCode.FIELD_LIMIT))\n     if total_checks > limits.max_checks:\n         issues.append(ResolveIssue(ResolveCode.CHECK_LIMIT))",
+      "duration_seconds": 2.145572125000399,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared"
+      ],
+      "id": "7376dfe174d4",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "killed",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace issues.append(ResolveIssue(ResolveCode.FIELD_LIMIT)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant bcabf546cc60\n@@ -339,7 +339,7 @@\n         total_checks += len(checks)\n         resolved_documents.append(ResolvedDocumentSpec(document.id, document.type, document.source, fields, checks, SpecOrigin(field_origin, profile_origin)))\n     if total_fields > limits.max_fields:\n-        issues.append(ResolveIssue(ResolveCode.FIELD_LIMIT))\n+        pass\n     if total_checks > limits.max_checks:\n         issues.append(ResolveIssue(ResolveCode.CHECK_LIMIT))\n     if issues:",
+      "duration_seconds": 1.3949282089997723,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "bcabf546cc60",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace total_checks > limits.max_checks with not total_checks > limits.max_checks",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 469b62fe8db9\n@@ -340,7 +340,7 @@\n         resolved_documents.append(ResolvedDocumentSpec(document.id, document.type, document.source, fields, checks, SpecOrigin(field_origin, profile_origin)))\n     if total_fields > limits.max_fields:\n         issues.append(ResolveIssue(ResolveCode.FIELD_LIMIT))\n-    if total_checks > limits.max_checks:\n+    if not total_checks > limits.max_checks:\n         issues.append(ResolveIssue(ResolveCode.CHECK_LIMIT))\n     if issues:\n         return Err(ResolveFailure(tuple(issues)))",
+      "duration_seconds": 1.9463947910007846,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "469b62fe8db9",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace total_checks > limits.max_checks with total_checks >= limits.max_checks",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant a32c6cf25136\n@@ -340,7 +340,7 @@\n         resolved_documents.append(ResolvedDocumentSpec(document.id, document.type, document.source, fields, checks, SpecOrigin(field_origin, profile_origin)))\n     if total_fields > limits.max_fields:\n         issues.append(ResolveIssue(ResolveCode.FIELD_LIMIT))\n-    if total_checks > limits.max_checks:\n+    if total_checks >= limits.max_checks:\n         issues.append(ResolveIssue(ResolveCode.CHECK_LIMIT))\n     if issues:\n         return Err(ResolveFailure(tuple(issues)))",
+      "duration_seconds": 1.844238249999762,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "a32c6cf25136",
+      "note": "all laws passed",
+      "operator": "alter-comparison-boundary",
+      "outcome": "survived",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace issues.append(ResolveIssue(ResolveCode.CHECK_LIMIT)) with pass",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 787d2c1151db\n@@ -341,7 +341,7 @@\n     if total_fields > limits.max_fields:\n         issues.append(ResolveIssue(ResolveCode.FIELD_LIMIT))\n     if total_checks > limits.max_checks:\n-        issues.append(ResolveIssue(ResolveCode.CHECK_LIMIT))\n+        pass\n     if issues:\n         return Err(ResolveFailure(tuple(issues)))\n     return Ok(ResolvedVerificationSpec(request.schema_version, request.verification_id, request.verification_type, request.claims, tuple(resolved_documents)))",
+      "duration_seconds": 2.104314791999059,
+      "exit_code": 0,
+      "failed_tests": [],
+      "id": "787d2c1151db",
+      "note": "all laws passed",
+      "operator": "skip-call-statement",
+      "outcome": "survived",
+      "qualname": "resolve",
+      "timed_out": false
+    },
+    {
+      "description": "resolve: replace issues with not issues",
+      "diff": "--- backend.verification.profile.resolve.py\n+++ backend.verification.profile.resolve.py mutant 7a15f44749b2\n@@ -342,6 +342,6 @@\n         issues.append(ResolveIssue(ResolveCode.FIELD_LIMIT))\n     if total_checks > limits.max_checks:\n         issues.append(ResolveIssue(ResolveCode.CHECK_LIMIT))\n-    if issues:\n+    if not issues:\n         return Err(ResolveFailure(tuple(issues)))\n     return Ok(ResolvedVerificationSpec(request.schema_version, request.verification_id, request.verification_type, request.claims, tuple(resolved_documents)))",
+      "duration_seconds": 2.327450583999962,
+      "exit_code": 1,
+      "failed_tests": [
+        "laws.py::a_valid_request_compiles_to_exactly_what_it_declared",
+        "laws.py::an_adapter_fault_is_server_attributable_and_redacted",
+        "laws.py::a_check_on_a_selected_and_claimed_field_resolves"
+      ],
+      "id": "7a15f44749b2",
+      "note": "law failure or implementation exception; replay confirmed",
+      "operator": "negate-condition",
+      "outcome": "killed",
+      "qualname": "resolve",
+      "timed_out": false
+    }
+  ],
+  "schema": "tlaw.mutation/v1",
+  "stale_equivalence_entries": [],
+  "summary": {
+    "errors": 0,
+    "has_errors": false,
+    "invalid": 0,
+    "killed": 34,
+    "runnable": 72,
+    "statement": "Killed 34 of 72 runnable generated mutations.",
+    "survived": 38,
+    "unresolved_equivalent": 0
+  }
+}

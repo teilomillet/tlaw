@@ -35,7 +35,7 @@ def test_search_records_its_seed_shrunk_inputs_and_owned_comparison(
     assert report["schema"] == "tlaw.check/v1"
     assert report["mode"] == "search"
     assert report["seed"] == 20260723
-    assert report["summary"] == {"failures": 1, "status": "failed"}
+    assert report["summary"] == {"failures": 1, "status": "failed", "retained": True}
     [failure] = report["failures"]
     assert failure["identity"].endswith("laws.py::integers_stay_below_ten")
     assert failure["generation"] == "search-seeded-inferred"
@@ -274,7 +274,7 @@ def zero_times_anything_is_zero(value: int):
     assert "randomized search, seed 424242" in result.output
     report = json.loads(result.to_json())
     assert report["seed"] == 424242
-    assert report["summary"] == {"failures": 0, "status": "passed"}
+    assert report["summary"] == {"failures": 0, "status": "passed", "retained": True}
 
 
 def test_search_explains_the_explicit_forms_real_posture(tmp_path: Path) -> None:
@@ -303,10 +303,17 @@ def explicit_failure(value):
     )
 
 
-def test_unserializable_counterexample_is_invalid_evidence_not_a_report(
+def test_an_unserializable_counterexample_is_a_law_failure_without_evidence(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """The refutation and the missing evidence are two separate facts.
+
+    tlaw established that the law was refuted; it separately could not encode
+    the input. Reporting the run as invalid would erase the first fact, so
+    `check` exits 1 and says the counterexample cannot be retained. Only the
+    explicit `--json` request, which genuinely cannot be satisfied, exits 2.
+    """
     law_file = tmp_path / "laws.py"
     law_file.write_text(
         """\
@@ -323,8 +330,10 @@ def complex_values_are_real(value: complex):
     result = tlaw.check(law_file, search=True, seed=7)
     report = json.loads(result.to_json())
 
-    assert result.exit_code == 2
-    assert report["summary"]["status"] == "invalid"
+    assert result.exit_code == 1
+    assert report["summary"]["status"] == "failed"
+    assert report["summary"]["retained"] is False
+    assert "the law above was refuted" in result.output
     assert "cannot retain input 'value' of type complex" in result.output
 
     retained = tmp_path / "invalid.json"
