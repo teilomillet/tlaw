@@ -1,1 +1,0 @@
-Add folder discovery to `tlaw check`: pointing it at a directory runs every `laws.py` and `*_laws.py` beneath it and passes only when every file passes; per-file evidence flags are refused in folder mode rather than silently ignored.

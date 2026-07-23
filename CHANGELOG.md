@@ -6,6 +6,40 @@ files into this document when the release is prepared.
 
 <!-- towncrier release notes start -->
 
+## 0.0.3 — 2026-07-23
+
+### Added
+
+- Add `tlaw diff BASE..HEAD` and a dedicated CI review summary to report static
+  law-space changes, including generation and decorators, without importing or
+  executing either Git revision.
+- Add folder discovery to `tlaw check`: pointing it at a directory runs every
+  `laws.py` and `*_laws.py` beneath it and passes only when every file passes;
+  per-file evidence flags are refused in folder mode rather than silently
+  ignored.
+- Add seeded randomized search, stable retained check reports, and exact
+  counterexample replay with `tlaw check --search`, `--json`, and `--replay`.
+- Expand aliased domains in `--explain`: a PEP 695 alias such as `list[Reward]`
+  for `Annotated[float, tlaw.number(0, 1)]` is now shown as `list[number(0,
+  1)]`, so the generated domain is visible instead of hidden behind the alias
+  name.
+- Support namespace packages (PEP 420) as mutation boundaries: tlaw reads the
+  dotted module name statically from the laws, then copies and shadows the top
+  namespace directory, including a regular child package beneath a namespace
+  parent.
+- Verify the `Annotated` base type against its tlaw domain: a base that can
+  only be a type the domain never produces (`Annotated[str, tlaw.number(0,
+  1)]`) is refused at decoration time, while a permissive or unprovable base is
+  left alone, so the visible contract cannot claim a type the domain does not
+  generate.
+
+### Fixed
+
+- Report a package mutant's rejecting law as a portable
+  `laws.py::function_name` identity instead of exposing a temporary-workspace
+  path.
+
+
 ## 0.0.2 — 2026-07-23
 
 ### Added

@@ -1,1 +1,0 @@
-Verify the `Annotated` base type against its tlaw domain: a base that can only be a type the domain never produces (`Annotated[str, tlaw.number(0, 1)]`) is refused at decoration time, while a permissive or unprovable base is left alone, so the visible contract cannot claim a type the domain does not generate.

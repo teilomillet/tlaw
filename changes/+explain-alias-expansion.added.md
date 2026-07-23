@@ -1,1 +1,0 @@
-Expand aliased domains in `--explain`: a PEP 695 alias such as `list[Reward]` for `Annotated[float, tlaw.number(0, 1)]` is now shown as `list[number(0, 1)]`, so the generated domain is visible instead of hidden behind the alias name.
