@@ -1081,6 +1081,7 @@ def _run_pytest_in_copy(
     )
     environment = os.environ.copy()
     environment.pop(TARGET_ENV, None)
+    environment.pop("PYTEST_ADDOPTS", None)
     # Same isolation discipline as `tlaw check`: no third-party pytest
     # plugins, hashing fixed, no bytecode cache pollution.
     environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"

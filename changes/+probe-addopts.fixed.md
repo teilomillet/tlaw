@@ -1,1 +1,1 @@
-`tlaw check` and `tlaw mutate` no longer apply the target project's pytest `addopts`, so probing a project that configures a plugin tlaw does not autoload no longer fails as a pytest usage error.
+`tlaw check` and `tlaw mutate` ignore pytest `addopts` from both the target project and `PYTEST_ADDOPTS`, so flags that require non-autoloaded plugins produce law evidence instead of a pytest usage error.

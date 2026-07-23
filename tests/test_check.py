@@ -82,7 +82,10 @@ def integers_are_less_than_ten(value: int):
     assert "value=10" in second.output
 
 
-def test_check_ignores_the_target_projects_pytest_addopts(tmp_path: Path) -> None:
+def test_check_ignores_pytest_addopts_from_project_and_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A probed project's addopts must not decide how tlaw runs its laws.
 
     Probing a codebase must not require editing that codebase. A real target
@@ -97,6 +100,7 @@ addopts = ["-n", "6", "--dist", "loadgroup"]
 """,
         encoding="utf-8",
     )
+    monkeypatch.setenv("PYTEST_ADDOPTS", "-n 6 --dist loadgroup")
     law_file = tmp_path / "laws.py"
     law_file.write_text(
         """\

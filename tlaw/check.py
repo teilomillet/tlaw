@@ -141,6 +141,7 @@ def _public_report(
 def _environment(*, explain: bool) -> dict[str, str]:
     environment = os.environ.copy()
     environment.pop(TARGET_ENV, None)
+    environment.pop("PYTEST_ADDOPTS", None)
     environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     if explain:
         environment["TLAW_EXPLAIN"] = "1"

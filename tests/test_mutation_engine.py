@@ -88,6 +88,20 @@ def test_weak_laws_leave_a_survivor_and_strong_laws_kill(tmp_path: Path) -> None
     assert result.statement in text
 
 
+def test_mutation_ignores_pytest_addopts_from_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_boundary(tmp_path, IMPLEMENTATION, LAWS)
+    monkeypatch.setenv("PYTEST_ADDOPTS", "-n 6 --dist loadgroup")
+
+    result = mutate(tmp_path / "laws.py", tmp_path / "implementation.py")
+
+    assert result.baseline_valid
+    assert result.error_count == 0
+    assert "unrecognized arguments" not in result.baseline.output
+
+
 def test_the_ledger_explains_survivors_and_flags_stale_entries(
     tmp_path: Path,
 ) -> None:
