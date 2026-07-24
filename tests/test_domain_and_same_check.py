@@ -53,6 +53,25 @@ def rewards_equal_their_doubles(rewards: Rewards):
     return tlaw.same([reward * 2 for reward in rewards], rewards, within=1e-6)
 """
 
+CHAINED_FAILING_LAWS = """\
+import tlaw
+
+
+Values = tlaw.list_of(int, min_size=1, max_size=4)
+
+
+@tlaw.law
+def matching_no_ops_do_not_count_as_work(values: Values):
+    refactored = []
+    baseline = []
+    return tlaw.same(refactored, baseline).and_then(
+        lambda: tlaw.same(
+            (len(refactored), len(baseline)),
+            (len(values), len(values)),
+        )
+    )
+"""
+
 
 def test_domain_laws_with_tolerant_comparison_pass_through_check(
     tmp_path: Path,
@@ -118,6 +137,21 @@ def test_a_failing_same_law_shows_both_sides_and_the_shrunk_input(
     assert "first difference at value[0]" in result.output
     assert "absolute difference" in result.output
     assert "Failing test case" in result.output
+
+
+def test_a_chained_comparison_reports_the_second_claim_not_false(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "laws.py").write_text(CHAINED_FAILING_LAWS, encoding="utf-8")
+
+    result = tlaw.check(tmp_path / "laws.py")
+
+    assert result.passed is False
+    assert "law failed: matching no ops do not count as work" in result.output
+    assert "first difference at value[0]" in result.output
+    assert "left:  0" in result.output
+    assert "right: 1" in result.output
+    assert "law returned False" not in result.output
 
 
 ALIAS_EXPLAIN_LAWS = """\

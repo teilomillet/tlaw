@@ -39,7 +39,8 @@ domains, structural comparison, stateful paths, and mutation evidence:
   value, so relational inputs are generated correctly by construction;
 - `same(..., within=..., relative=...)` compares nested values and array-like
   values with explicit absolute and relative tolerances and reports the first
-  difference;
+  difference, and `.and_then(...)` adds another claim without losing that
+  report;
 - `raises(Expected, function, ...)` states an exception contract whose
   failure names what actually happened instead of returning False, and awaits
   an `async` target;
@@ -135,6 +136,7 @@ What the law returns:
 | `returns(Type, f, ...)` | a call must **return** an error-value branch (`Err`), not raise |
 | `excludes(text, *forbidden)` | something must **not** appear (a leaked secret, hostname, traceback) |
 | `raises(...).and_then(observe)` | one call carries **two** claims (it refused, *and* its message is redacted) |
+| `same(...).and_then(next_claim)` | equivalence is only the first claim (the results agree, *and* both runs did the expected work) |
 
 What the annotation generates:
 
@@ -250,6 +252,28 @@ means exact comparison. For values whose magnitude is large or unknown, add
 shows why a numerical refactor needs it. `same` also compares nested lists,
 tuples, dictionaries, and array-like objects exposing `shape`, `dtype`, and
 `tolist()`.
+
+`same` states only a relationship. Two implementations that both return an
+empty result satisfy an equivalence law even when the domain says each should
+produce one item per input. Keep that second claim explanatory with
+`Comparison.and_then(...)`:
+
+```python
+refactored = normalize(values)
+baseline = normalize_reference(values)
+
+return tlaw.same(refactored, baseline).and_then(
+    lambda: tlaw.same(
+        (len(refactored), len(baseline)),
+        (len(values), len(values)),
+    )
+)
+```
+
+If equivalence fails, the report retains that comparison. Only after it
+matches does tlaw evaluate and return the length comparison. A plain `and`
+would convert the first failure to `False` and discard its left, right, and
+first difference.
 
 Domain aliases are runtime values, so strict type checkers may flag
 `rewards: Rewards`. The checker-clean spelling wraps the domain in

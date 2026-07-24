@@ -125,6 +125,49 @@ def test_check_raises_with_both_sides_retained() -> None:
     assert "2.0" in message and "2.5" in message
 
 
+def test_and_then_states_a_second_explanatory_claim_after_values_match() -> None:
+    refactored_steps = 0
+    baseline_steps = 0
+
+    result = same([], []).and_then(
+        lambda: same(
+            (refactored_steps, baseline_steps),
+            (1, 1),
+        )
+    )
+
+    assert bool(result) is False
+    assert "first difference at value[0]" in result.explain()
+    assert "left:  0" in result.explain()
+    assert "right: 1" in result.explain()
+
+
+def test_and_then_keeps_the_first_comparison_and_skips_the_next_claim() -> None:
+    observed = False
+    comparison = same(["refactored"], ["baseline"])
+
+    def next_claim() -> bool:
+        nonlocal observed
+        observed = True
+        return True
+
+    result = comparison.and_then(next_claim)
+
+    assert result is comparison
+    assert observed is False
+    assert "'refactored'" in result.explain()
+    assert "'baseline'" in result.explain()
+
+
+def test_and_then_chains_comparisons_without_collapsing_the_failure() -> None:
+    result = same(1, 1).and_then(lambda: same(2, 3)).and_then(lambda: same(4, 5))
+
+    assert result.left == 2
+    assert result.right == 3
+    assert "left:  2" in result.explain()
+    assert "right: 3" in result.explain()
+
+
 def test_within_must_be_a_finite_non_negative_number() -> None:
     with pytest.raises(ValueError):
         same(1.0, 1.0, within=-0.1)

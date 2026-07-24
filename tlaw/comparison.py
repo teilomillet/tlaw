@@ -51,7 +51,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import Any
+from typing import Any, Callable
 
 
 _REPR_LIMIT = 200
@@ -115,8 +115,9 @@ class Comparison:
 
     Returned instead of a bare bool so a failing law can show both sides
     and the first difference — retrain probe bottleneck 3. ``__bool__``
-    makes it usable in plain ``assert`` and boolean expressions, at the
-    cost of losing the explanation when combined with ``and``/``or``.
+    makes it usable in plain ``assert`` and boolean expressions.
+    ``and_then`` composes another claim without paying the explanation loss
+    of ``and``/``or``.
     """
 
     left: Any
@@ -154,6 +155,32 @@ class Comparison:
             return
         indented = "\n".join(f"  {line}" for line in self.explain().splitlines())
         raise AssertionError(f"law failed: {description}\n{indented}")
+
+    def and_then(self, observe: Callable[[], Any]) -> Any:
+        """State another claim after this comparison has matched.
+
+        An equivalence law may need a second claim — for example, that two
+        matching runs also produced the expected amount of work. Writing the
+        claims with ``and`` converts the first comparison to a bare boolean,
+        so a failure reports only ``False``. ``and_then`` keeps the first
+        comparison when it fails and otherwise returns the next claim::
+
+            return tlaw.same(refactored, baseline).and_then(
+                lambda: tlaw.same(
+                    (refactored_steps, baseline_steps),
+                    (expected_steps, expected_steps),
+                )
+            )
+
+        ``observe`` takes no argument because a comparison relates two values
+        rather than producing one distinguished payload. Close over either
+        value when the next claim needs it. The next result may be another
+        ``Comparison``, an ``Exclusion``, a ``Refusal``, an ``Outcome``, or a
+        bool.
+        """
+        if not self.matched:
+            return self
+        return observe()
 
 
 def _is_number(value: Any) -> bool:

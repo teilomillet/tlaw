@@ -146,6 +146,27 @@ target, and `and_then` chains a second claim without collapsing the first
 into a bare boolean. `excludes` states non-leakage structurally and reports
 where a fragment was found.
 
+The same composition is implemented for comparisons when equivalence is not
+the whole contract. In this example, two implementations that both return
+empty lists pass the first relationship but fail the second with retained
+length evidence:
+
+```python
+refactored = normalize(values)
+baseline = normalize_reference(values)
+
+return tlaw.same(refactored, baseline).and_then(
+    lambda: tlaw.same(
+        (len(refactored), len(baseline)),
+        (len(values), len(values)),
+    )
+)
+```
+
+The callback is zero-argument because neither side of a comparison is the
+distinguished payload. It is evaluated only after the first comparison
+matches, and may return another explanatory tlaw result.
+
 `within` is absolute tolerance near zero; `relative` scales with the larger
 magnitude. Both default to zero, so exact comparison remains the default.
 `same` retains both values and the first difference, compares array shapes,

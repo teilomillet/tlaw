@@ -1,6 +1,6 @@
 # Current tlaw behavior
 
-Status: implemented and verified on 2026-07-23. This document describes what
+Status: implemented and verified on 2026-07-24. This document describes what
 the current repository code does today. Design documents may describe future
 directions; this file does not.
 
@@ -30,7 +30,8 @@ version, visible input domains, example budget, and deterministic posture.
 An inferred law may return:
 
 - one Python `bool`;
-- a `tlaw.Comparison` from `tlaw.same(...)`;
+- a `tlaw.Comparison` from `tlaw.same(...)`, optionally chained through
+  `.and_then(...)`;
 - a `tlaw.Refusal` from `tlaw.raises(...)`;
 - a `tlaw.Outcome` from `tlaw.returns(...)`;
 - a `tlaw.Exclusion` from `tlaw.excludes(...)`;
@@ -457,6 +458,29 @@ two claims with `and` converts the first to a boolean and loses its
 explanation; `and_then` keeps whichever claim actually failed, so the report
 either names the wrong branch or explains the second comparison, never both
 collapsed into `False`.
+
+`Comparison.and_then(...)` applies the same short-circuiting rule to
+relationship claims. It takes a zero-argument callback: a comparison relates
+two values rather than producing one distinguished payload, so a following
+claim closes over whichever values it needs. This is the report-preserving
+form for several comparisons and for an equivalence law that must also prove
+the two implementations did meaningful work:
+
+```python
+refactored = normalize(values)
+baseline = normalize_reference(values)
+
+return tlaw.same(refactored, baseline).and_then(
+    lambda: tlaw.same(
+        (len(refactored), len(baseline)),
+        (len(values), len(values)),
+    )
+)
+```
+
+If the outputs differ, the first comparison is returned unchanged and the
+length claim is not evaluated. If they agree but are both wrongly empty, the
+second comparison reports the incorrect lengths instead of a bare `False`.
 
 ## One non-leakage contract
 

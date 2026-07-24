@@ -17,6 +17,8 @@ Stating a law — what the function returns:
    *not* appear: a leaked secret, hostname, or traceback.
 5. ``raises(...).and_then(observe)`` — when one call carries *two* claims
    (it refused, *and* the surfaced message is redacted).
+   ``same(...).and_then(next_claim)`` — when equivalence is only the first
+   claim (the results agree, *and* both runs did the expected work).
 
 Generating inputs — what the annotation says:
 
