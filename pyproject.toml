@@ -4,7 +4,7 @@ description = "Write and enforce executable behavioral laws for Python code."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-version = "0.0.5"
+version = "0.0.6"
 requires-python = ">=3.12"
 authors = [{ name = "Teïlo Millet", email = "i@teilomillet.com" }]
 keywords = [

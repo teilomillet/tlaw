@@ -6,6 +6,15 @@ files into this document when the release is prepared.
 
 <!-- towncrier release notes start -->
 
+## 0.0.6 — 2026-07-27
+
+### Fixed
+
+- A mutant killed by a calibrated timeout no longer reports the laws that
+  pytest happened to print before the budget stopped it; a timeout names no
+  law, so its `failed_tests` is now empty.
+
+
 ## 0.0.5 — 2026-07-27
 
 ### Added
