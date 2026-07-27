@@ -1294,10 +1294,21 @@ def _run_one_mutant(
     # Name the killing law by the run's one laws file. pytest reports it by
     # the path it was addressed with — in a package run a long climb from a
     # temp workspace, which is ugly and not portable to another machine.
+    #
+    # A timed-out run is scraped for nothing. Its output is whatever pytest
+    # had printed when the budget killed it mid-flight, so any FAILED lines
+    # in it are a truncated prefix of what would have failed, not the set of
+    # laws that rejected this mutant. Reading that prefix as attribution is
+    # exactly the overclaim ``kill_kind`` exists to prevent: the kill was
+    # earned by the timeout, and a timeout names nothing.
     prefix = f"{boundary.laws_name}::"
-    failed = tuple(
-        prefix + node.split("::", 1)[1] if "::" in node else node
-        for node in _failed_tests(executed.output)
+    failed = (
+        ()
+        if executed.timed_out
+        else tuple(
+            prefix + node.split("::", 1)[1] if "::" in node else node
+            for node in _failed_tests(executed.output)
+        )
     )
     return MutantRun(
         mutation=mutation,

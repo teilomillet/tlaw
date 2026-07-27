@@ -504,3 +504,61 @@ def test_a_report_without_timeout_kills_stays_silent_about_them() -> None:
 
     assert result.killed_by_timeout_count == 0
     assert "calibrated timeout" not in result.render_text()
+
+
+def test_a_timed_out_run_is_scraped_for_no_attribution(monkeypatch, tmp_path) -> None:
+    # Found by re-running the kvfit probe: a mutant killed by the budget can
+    # still have printed FAILED lines before pytest was killed mid-flight.
+    # Those lines are a truncated prefix of what would have failed, not the
+    # laws that rejected the mutant, so they must not become attribution.
+    partial_output = (
+        "FAILED laws.py::first_law - assert False\n"
+        "FAILED laws.py::second_law - assert False\n"
+    )
+    monkeypatch.setattr(
+        mutation_module,
+        "_run_pytest_in_copy",
+        lambda *a, **k: mutation_module._PytestRun(
+            exit_code=124,
+            timed_out=True,
+            duration_seconds=7.8,
+            output=partial_output,
+            command=(),
+        ),
+    )
+
+    run = mutation_module._run_one_mutant(
+        _boundary(tmp_path),
+        _mutation(),
+        budget_seconds=7.8,
+        baseline_duration=0.78,
+        timeout_multiplier=10.0,
+    )
+
+    assert run.outcome is MutationOutcome.KILLED
+    assert run.kill_kind is KillKind.TIMEOUT
+    assert run.failed_tests == ()
+    assert "calibrated timeout" in run.note
+
+    # The same output from a run that finished is ordinary attribution.
+    monkeypatch.setattr(
+        mutation_module,
+        "_run_pytest_in_copy",
+        lambda *a, **k: mutation_module._PytestRun(
+            exit_code=1,
+            timed_out=False,
+            duration_seconds=1.0,
+            output=partial_output,
+            command=(),
+        ),
+    )
+    finished = mutation_module._run_one_mutant(
+        _boundary(tmp_path),
+        _mutation(),
+        budget_seconds=7.8,
+        baseline_duration=0.78,
+        timeout_multiplier=10.0,
+    )
+
+    assert finished.kill_kind is KillKind.OBSERVED
+    assert finished.failed_tests == ("laws.py::first_law", "laws.py::second_law")
