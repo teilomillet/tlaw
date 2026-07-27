@@ -6,6 +6,24 @@ files into this document when the release is prepared.
 
 <!-- towncrier release notes start -->
 
+## 0.0.5 — 2026-07-27
+
+### Added
+
+- Add `Comparison.and_then(...)` to chain another claim without losing the
+  first failed comparison's explanation.
+
+### Changed
+
+- `tlaw mutate` now confirms a kill only when the replay reproduces the same
+  evidence, not just the same verdict: a timeout and a law failure can no
+  longer confirm each other, an observed kill must name the same laws twice,
+  and a timeout kill is re-timed against a baseline measured immediately before
+  its replay so a contended machine cannot manufacture a kill. Reports gain a
+  `kill_kind` per mutation and a separate count of kills by calibrated timeout,
+  which name no law.
+
+
 ## 0.0.4 — 2026-07-23
 
 ### Added
