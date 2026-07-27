@@ -160,14 +160,21 @@ vocabulary word paying for itself in measured kills:
 | plus the budget anchored to an external fact | 17 of 40 |
 | plus the explicit tensor-parallel law (`depends` + `one_of`) | 21 of 40 |
 | plus `as_dict`, weights/kv sharding, candidate completeness, concurrency | 35 of 40 |
-| plus four boundary laws (`raises`, cross-domain, two `depends`-built) | **39 of 40** |
+| plus four boundary laws (`raises`, cross-domain, two `depends`-built) | **39 of 40** (5 calibrated-timeout kills in the retained run) |
 
-Every added law is provably load-bearing; the report attributes each new
-kill to the law that made it. Two of the last four mutants were only
-reachable by *constructing* the exact input — one sequence exactly fitting
-the budget, and weights exactly filling it — which `depends` expresses by
-deriving the second input from the first, hitting numeric boundaries a
-uniform domain never lands on.
+The incremental runs make every added law load-bearing in this probe, but
+the retained final report does not attribute every kill to a law. Five of
+the 39 were killed by the baseline-calibrated timeout on the recording
+machine, so they name no law. On a slower rerun the same five mutations
+finished and were rejected by laws; the 39-of-40 outcome reproduced, while
+the kind of evidence behind five kills changed with the machine. The
+retained evidence and that qualification are recorded together in
+[`probes/kvfit/`](../probes/kvfit/README.md).
+
+Two of the last four mutants were only reachable by *constructing* the exact
+input — one sequence exactly fitting the budget, and weights exactly filling
+it — which `depends` expresses by deriving the second input from the first,
+hitting numeric boundaries a uniform domain never lands on.
 
 The one remaining mutant is a **proven equivalent**, not a survivor: in the
 candidate filter, `size <= scale_up` versus `size < scale_up` cannot change

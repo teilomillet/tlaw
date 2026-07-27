@@ -86,10 +86,13 @@ rejected by 11 to 15 laws each.
 
 So they are not infinite loops. They terminate; negating those conditions
 widens the candidate tensor-parallel set, and the laws then do five to six
-times the re-run baseline's work. A budget derived from the baseline by a fixed
-multiplier is systematically tight for exactly the mutants that make the
-implementation do more, and whether such a mutant is recorded as *laws
-rejected it* or as *it ran out of budget* depends on how fast the machine is.
+times the re-run baseline's work. In this probe, the 10x budget was tight for
+five mutations that made the implementation do more, and whether each was
+recorded as *laws rejected it* or as *it ran out of budget* depended on the
+machine. This is one data point on one codebase: it does not establish that
+10x is generally too small, or justify changing the default by itself. It
+does establish the narrower risk that a baseline-scaled budget can change a
+terminating mutant's kill kind when the mutation expands the work.
 
 Both are honest kills — a run that exceeds a calibrated budget really did
 behave differently from the baseline. But a timeout kill names no law, so it

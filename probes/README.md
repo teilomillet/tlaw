@@ -12,7 +12,9 @@ documentation can always be reproduced, not merely believed.
 
 - [`kvfit/`](kvfit/README.md) — the package-boundary and vocabulary probe
   that reached 39 of 40 mutants killed on `kvfit.planner`, with the last
-  mutant a proven equivalent.
+  mutant a proven equivalent; five of the 39 were calibrated-timeout kills
+  with no law attribution in the retained run, then completed and were
+  rejected by laws on a slower rerun.
 - [`anef/`](anef/README.md) — the railway, async, composite-input, and
   redaction probe behind issue #1. It earned `record`, `returns`,
   `excludes`, await-aware `raises`, and the decision that effect-absence is

@@ -102,6 +102,23 @@ Killed 34 of 72 runnable generated mutations.
 Survivors: 38
 ```
 
+### Reproduction qualification
+
+A later diagnostic run reported mutant `f7c40f6a77e7` as killed once. That
+mutation removes the `DOCUMENT_LIMIT` issue inside a branch requiring more
+than two documents, while every probe execution that reaches `resolve`
+constructs exactly one document. It therefore cannot change any generated
+execution and the kill was spurious, not evidence that a law reached the
+branch.
+
+The retained report records this mutant as survived. In a follow-up diagnostic
+on the pinned target it survived 20 of 20 isolated runs, and the Law 5
+`asyncio.CancelledError` contract passed 100 of 100 isolated runs. The
+one-off kill has not been reproduced, so its cause is not established; the
+Law 5 cancellation path remains an anef-side investigation lead, not a tlaw
+behavior claim or an established cause. A future run must reproduce the same
+evidence before it may replace the retained count.
+
 **These laws do not pin `resolve` as a whole, and this probe does not claim
 they do.** Every survivor sits on a path the laws' declared domains never
 enter: duplicate document IDs and `document_ids.add` (the request domain
