@@ -598,6 +598,25 @@ a mutant is invalid rather than a kill, and a non-reproducing kill is an error.
 The rejecting law is reported as a portable `laws.py::function_name` identity,
 not as a path through tlaw's temporary mutation workspace.
 
+Every kill is rerun once, and it is credited only when the replay returns the
+same evidence rather than the same verdict. Each kill records a kind in the
+report's `kill_kind` field: `observed` when laws reported failures, `timeout`
+when the run exceeded its calibrated budget. A replay must reproduce that same
+kind, and an `observed` kill must name the same laws both times; a mismatch is
+an `error`, never a kill. A `timeout` kill re-measures the baseline
+immediately before its replay and is re-timed against a budget recomputed from
+that fresh measurement, so a machine that became busy after the run started
+cannot turn two slow runs into a kill; if the re-measured baseline no longer
+passes, the run is an `error` because no calibration remains. Only a confirmed
+`observed` kill carries law names — a downgraded run keeps its first run's
+attribution in its note instead.
+
+Because a `timeout` kill names no law, the report counts those separately:
+`summary.killed_by_timeout` in JSON, and a `Kills by calibrated timeout (no
+law attribution)` line in the text report when any exist. They remain kills
+and stay in the numerator; the separate count keeps that numerator
+decomposable.
+
 Before any mutant is scored, `mutate` runs a canary by default, with no
 opt-out: a poisoned copy of the implementation in which every function
 raises. If the laws still pass, they never observed the boundary module —

@@ -26,17 +26,30 @@ How: the three evidence rules this module encodes
    to the mutation. A mutant that breaks collection could not be loaded at
    all, so it is ``invalid``: never a kill, never a law success.
 
-2. **A calibrated timeout is a kill.** An infinite loop is behavior, not
-   infrastructure. The per-mutant budget is derived from the measured
-   baseline duration (``max(floor, multiplier * baseline)``), and that
-   calibration is recorded in the report. Only a timeout without a
-   measured baseline would be an error; this engine always measures.
+2. **A calibrated timeout is a kill, and is counted apart.** An infinite
+   loop is behavior, not infrastructure. The per-mutant budget is derived
+   from the measured baseline duration (``max(floor, multiplier *
+   baseline)``), and that calibration is recorded in the report. Only a
+   timeout without a measured baseline would be an error; this engine
+   always measures. But a timeout is a kill *no law reported*: it carries
+   no attribution and can never appear in the which-law-defends-this
+   reading of a report, so the summary states its count separately rather
+   than letting it borrow weight from kills that name a law.
 
-3. **A kill that does not replay is an error, not a kill.** Every kill is
-   rerun once in a fresh workspace. Laws use deterministic generation by
-   default, so a genuine kill reproduces; one that does not is recorded as
-   an error rather than inflating strength. This is the only place tlaw
-   ever downgrades a failure, and it downgrades toward claiming less.
+3. **A kill that does not replay is an error, not a kill — and replaying
+   means the same evidence, not the same label.** Every kill is rerun
+   once in a fresh workspace and must come back as the same *kind*
+   (``KillKind``): a timeout cannot confirm a law failure, or the reverse,
+   because the two runs would be disagreeing about what happened. An
+   observed kill must additionally name the same laws, since attribution
+   is read out of exactly that field. A timeout kill re-measures the
+   baseline immediately before its replay and recomputes the budget from
+   that fresh measurement, so a machine that became contended after the
+   run began cannot manufacture a kill out of two slow runs. Laws use
+   deterministic generation by default, so a genuine kill reproduces; one
+   that does not is recorded as an error rather than inflating strength.
+   This is the only place tlaw ever downgrades a failure, and it
+   downgrades toward claiming less.
 
 4. **The canary must die before anything is scored.** Before the first
    real mutant runs, a poisoned copy of the implementation — every
@@ -93,6 +106,30 @@ class MutationOutcome(Enum):
     INVALID = "invalid"
     ERROR = "error"
     UNRESOLVED_EQUIVALENT = "unresolved-equivalent"
+
+
+class KillKind(Enum):
+    """How a kill was observed, which decides what may confirm it.
+
+    A kill is two facts, not one: that the mutant behaved differently from
+    the baseline, and *how* that difference showed up. The two kinds are
+    not interchangeable evidence:
+
+    - ``OBSERVED`` — pytest reported failures, so named laws rejected the
+      mutant and the run carries attribution in ``failed_tests``; and
+    - ``TIMEOUT`` — the run exceeded its calibrated budget. That is a
+      behavioral difference (rule 2), but no law reported anything, so the
+      run carries no attribution and can never appear in the
+      which-law-defends-this reading of a report.
+
+    Because they are different claims, a replay may confirm a kill only
+    when it reproduces the *same* kind. A timeout confirmed by a law
+    failure, or a law failure confirmed by a timeout, is two runs
+    disagreeing about what happened, which is not confirmation.
+    """
+
+    OBSERVED = "observed"
+    TIMEOUT = "timeout"
 
 
 # Why these operators: docs/mutation-evidence.md declares the first
@@ -516,32 +553,39 @@ class CanaryRun:
 
 def classify_mutant_exit(
     exit_code: int, *, timed_out: bool
-) -> tuple[MutationOutcome, str]:
-    """Map one mutant run to an outcome under attribution-by-baseline.
+) -> tuple[MutationOutcome, KillKind | None, str]:
+    """Map one mutant run to an outcome, a kill kind, and a note.
 
     This function is only called when the baseline already passed cleanly
     on the same laws with the same deterministic examples, so:
 
     - a timeout is a kill, because the budget was calibrated against the
-      measured baseline and an infinite loop is behavior (rule 2);
+      measured baseline and an infinite loop is behavior (rule 2). Its
+      kind is ``TIMEOUT``: real evidence, but evidence no law reported;
     - pytest exit 1 is a kill, whether the law compared ``False`` or the
       mutated implementation raised — both are behavioral differences the
-      baseline did not show (rule 1);
+      baseline did not show (rule 1). Its kind is ``OBSERVED``;
     - pytest exit 2 means collection failed, and since the baseline
       collected these same laws, the mutant could not be loaded: invalid,
       never a kill and never a law success; and
     - every other exit is a harness problem the mutation cannot be
       blamed or credited for: error.
+
+    The kind is ``None`` for every non-kill, because only a kill has one.
     """
     if timed_out:
-        return MutationOutcome.KILLED, "calibrated timeout"
+        return MutationOutcome.KILLED, KillKind.TIMEOUT, "calibrated timeout"
     if exit_code == 0:
-        return MutationOutcome.SURVIVED, "all laws passed"
+        return MutationOutcome.SURVIVED, None, "all laws passed"
     if exit_code == 1:
-        return MutationOutcome.KILLED, "law failure or implementation exception"
+        return (
+            MutationOutcome.KILLED,
+            KillKind.OBSERVED,
+            "law failure or implementation exception",
+        )
     if exit_code == 2:
-        return MutationOutcome.INVALID, "mutant could not be collected or loaded"
-    return MutationOutcome.ERROR, f"harness exit code {exit_code}"
+        return MutationOutcome.INVALID, None, "mutant could not be collected or loaded"
+    return MutationOutcome.ERROR, None, f"harness exit code {exit_code}"
 
 
 def load_equivalence_ledger(path: str | Path) -> dict[str, str]:
@@ -604,6 +648,11 @@ class MutantRun:
     or the baseline was invalid). ``failed_tests`` names the exact laws
     that rejected the mutant, so a law change can later say which
     survivors it kills.
+
+    ``kill_kind`` is set only on a kill and says which evidence produced
+    it. A ``TIMEOUT`` kill has no ``failed_tests``, because no law
+    reported anything: reading such a run as attribution would credit a
+    law that never spoke.
     """
 
     mutation: Mutation
@@ -614,6 +663,7 @@ class MutantRun:
     duration_seconds: float = 0.0
     failed_tests: tuple[str, ...] = ()
     output: str = field(repr=False, default="")
+    kill_kind: KillKind | None = None
 
 
 def apply_equivalence_ledger(
@@ -698,6 +748,22 @@ class MutationResult:
         return self._count(MutationOutcome.KILLED)
 
     @property
+    def killed_by_timeout_count(self) -> int:
+        """Kills that no law reported, and so carry no attribution.
+
+        A timeout kill is real evidence of behavioral difference (rule 2)
+        and belongs in the numerator. It can never appear in the
+        which-law-defends-this reading of a report, because no law
+        reported anything. Counting it separately keeps the numerator
+        decomposable, so the strength statement cannot quietly borrow
+        weight from kills that name nothing.
+        """
+        return sum(
+            run.outcome is MutationOutcome.KILLED and run.kill_kind is KillKind.TIMEOUT
+            for run in self.runs
+        )
+
+    @property
     def survived_count(self) -> int:
         return self._count(MutationOutcome.SURVIVED)
 
@@ -768,6 +834,7 @@ class MutationResult:
                     "qualname": run.mutation.qualname,
                     "description": run.mutation.description,
                     "outcome": run.outcome.value,
+                    "kill_kind": None if run.kill_kind is None else run.kill_kind.value,
                     "note": run.note,
                     "exit_code": run.exit_code,
                     "timed_out": run.timed_out,
@@ -783,6 +850,7 @@ class MutationResult:
             ],
             "summary": {
                 "killed": self.killed_count,
+                "killed_by_timeout": self.killed_by_timeout_count,
                 "survived": self.survived_count,
                 "unresolved_equivalent": self.unresolved_equivalent_count,
                 "invalid": self.invalid_count,
@@ -830,7 +898,10 @@ class MutationResult:
         }
         for run in self.runs:
             detail = f" ({run.note})" if run.note else ""
-            if run.failed_tests:
+            # Attribution is shown only for a confirmed observed kill. A
+            # downgraded run keeps its explanation instead, so no line
+            # ever reads as "this law rejected it" unless a law did.
+            if run.kill_kind is KillKind.OBSERVED and run.failed_tests:
                 detail = f" (law: {', '.join(run.failed_tests)})"
             lines.append(
                 f"- {run.mutation.mutation_id} {labels[run.outcome]}"
@@ -839,6 +910,11 @@ class MutationResult:
         for mutation_id, note in self.stale_ledger_entries:
             lines.append(f"- {mutation_id} STALE LEDGER ENTRY: {note}")
         lines.append(self.statement)
+        if self.killed_by_timeout_count:
+            lines.append(
+                "Kills by calibrated timeout (no law attribution):"
+                f" {self.killed_by_timeout_count}"
+            )
         lines.append(f"Survivors: {self.survived_count}")
         lines.append(
             f"Unresolved equivalent candidates: {self.unresolved_equivalent_count}"
@@ -1205,7 +1281,7 @@ def _run_one_mutant(
         mutated_source=mutation.mutated_source,
         timeout_seconds=budget_seconds,
     )
-    outcome, note = classify_mutant_exit(
+    outcome, kill_kind, note = classify_mutant_exit(
         executed.exit_code, timed_out=executed.timed_out
     )
     if executed.timed_out:
@@ -1232,7 +1308,129 @@ def _run_one_mutant(
         duration_seconds=executed.duration_seconds,
         failed_tests=failed,
         output=executed.output,
+        kill_kind=kill_kind,
     )
+
+
+def _kind_name(kind: KillKind | None) -> str:
+    return "no kill" if kind is None else kind.value
+
+
+def _law_list(tests: tuple[str, ...]) -> str:
+    return ", ".join(tests) if tests else "no named law"
+
+
+def _kill_did_not_replay(run: MutantRun, note: str) -> MutantRun:
+    """Downgrade a kill to an error, keeping the reason visible.
+
+    Rule 3 has one direction: claim less strength rather than count a
+    difference that did not reproduce. An error is not a kill, so the
+    downgraded run keeps neither a kill kind nor ``failed_tests`` — the
+    first run's attribution moves into the note, where it reads as
+    history instead of as a law that rejected this mutant. That keeps one
+    invariant true everywhere a report is consumed: a run naming laws is
+    a confirmed observed kill.
+    """
+    return replace(
+        run,
+        outcome=MutationOutcome.ERROR,
+        note=note,
+        kill_kind=None,
+        failed_tests=(),
+    )
+
+
+def _confirm_kill(
+    boundary: Boundary,
+    mutation: Mutation,
+    run: MutantRun,
+    *,
+    budget_seconds: float,
+    baseline_duration: float,
+    timeout_multiplier: float,
+    timeout_floor_seconds: float,
+    baseline_timeout_seconds: float,
+) -> MutantRun:
+    """Rerun one kill and accept it only if the same evidence returns.
+
+    Rule 3 says a kill that does not replay is an error. What counts as
+    *the same kill* is the whole content of this function:
+
+    - a timeout kill is re-calibrated before it is retried. Its budget
+      came from a baseline measured before the mutant loop began, which
+      on a long run can be hours old; if the machine has since become
+      contended, every remaining mutant looks slow and two slow runs
+      would confirm each other. So the baseline is measured again
+      immediately before the replay, the budget is recomputed from that
+      fresh measurement, and the mutant must exceed *that* budget. A
+      baseline that no longer passes leaves no calibration at all, which
+      is an error rather than a kill;
+    - the replay must reproduce the same kill *kind*. An observed failure
+      and a timeout are different claims, so one cannot confirm the other
+      (see ``KillKind``); and
+    - an observed kill must name the same laws. Which law defends a
+      behavior is read out of ``failed_tests``, so two runs that disagree
+      about the killing law leave that reading unsupported even though
+      both runs said "killed".
+    """
+    if run.kill_kind is KillKind.TIMEOUT:
+        fresh = _run_pytest_in_copy(
+            boundary,
+            mutated_source=None,
+            timeout_seconds=baseline_timeout_seconds,
+        )
+        if fresh.exit_code != 0 or fresh.timed_out:
+            return _kill_did_not_replay(
+                run,
+                "timeout kill not confirmed: the re-measured baseline no longer"
+                f" passes (exit code {fresh.exit_code},"
+                f" timed out {str(fresh.timed_out).lower()}), so there is no"
+                " calibration left to time this mutant against",
+            )
+        replay_baseline = fresh.duration_seconds
+        replay_budget = max(timeout_floor_seconds, timeout_multiplier * replay_baseline)
+    else:
+        replay_baseline = baseline_duration
+        replay_budget = budget_seconds
+
+    replay = _run_one_mutant(
+        boundary,
+        mutation,
+        budget_seconds=replay_budget,
+        baseline_duration=replay_baseline,
+        timeout_multiplier=timeout_multiplier,
+    )
+
+    if replay.outcome is not MutationOutcome.KILLED:
+        return _kill_did_not_replay(
+            run,
+            "kill did not replay: first run killed, replay"
+            f" {replay.outcome.value} ({replay.note})",
+        )
+    if replay.kill_kind is not run.kill_kind:
+        return _kill_did_not_replay(
+            run,
+            "kill did not replay in kind: first run"
+            f" {_kind_name(run.kill_kind)}, replay {_kind_name(replay.kill_kind)}",
+        )
+    if run.kill_kind is KillKind.OBSERVED and set(replay.failed_tests) != set(
+        run.failed_tests
+    ):
+        return _kill_did_not_replay(
+            run,
+            "attribution did not replay: first run killed by"
+            f" {_law_list(run.failed_tests)}, replay killed by"
+            f" {_law_list(replay.failed_tests)}",
+        )
+    if run.kill_kind is KillKind.TIMEOUT:
+        return replace(
+            run,
+            note=(
+                f"{run.note}; replay confirmed against a baseline re-measured"
+                f" at {replay_baseline:.2f}s (budget {replay_budget:.1f}s)"
+            ),
+        )
+    return replace(run, note=f"{run.note}; replay confirmed")
 
 
 def mutate(
@@ -1406,27 +1604,20 @@ def mutate(
             timeout_multiplier=timeout_multiplier,
         )
         if run.outcome is MutationOutcome.KILLED:
-            replay = _run_one_mutant(
+            # Rule 3: a kill that does not replay is an error, and what
+            # counts as replaying is kind and attribution, not the label.
+            # This is deliberately the less flattering direction — tlaw
+            # claims less strength instead of counting luck.
+            run = _confirm_kill(
                 boundary,
                 mutation,
+                run,
                 budget_seconds=budget_seconds,
                 baseline_duration=baseline.duration_seconds,
                 timeout_multiplier=timeout_multiplier,
+                timeout_floor_seconds=timeout_floor_seconds,
+                baseline_timeout_seconds=baseline_timeout_seconds,
             )
-            if replay.outcome is MutationOutcome.KILLED:
-                run = replace(run, note=f"{run.note}; replay confirmed")
-            else:
-                # Rule 3: a kill that does not replay is an error. This
-                # is deliberately the less flattering direction — tlaw
-                # claims less strength instead of counting luck.
-                run = replace(
-                    run,
-                    outcome=MutationOutcome.ERROR,
-                    note=(
-                        "kill did not replay: first run killed,"
-                        f" replay {replay.outcome.value} ({replay.note})"
-                    ),
-                )
         finished.append(run)
 
     runs, stale = apply_equivalence_ledger(tuple(finished), ledger)

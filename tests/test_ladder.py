@@ -53,6 +53,7 @@ NOT_LADDER_RUNGS = {
     "MutantRun",
     "Mutation",
     "MutationOutcome",
+    "KillKind",
     "CanaryRun",
     "KnownWrongOutcome",
     "LawChange",

@@ -80,6 +80,7 @@ from .outcome import Outcome, returns
 from .refusal import Refusal, raises
 from .mutation import (
     CanaryRun,
+    KillKind,
     Mutation,
     MutationOutcome,
     MutationResult,
@@ -104,6 +105,7 @@ __all__ = [
     "Equation",
     "Exclusion",
     "FolderCheckResult",
+    "KillKind",
     "KnownWrongOutcome",
     "LawChange",
     "LawDiffResult",

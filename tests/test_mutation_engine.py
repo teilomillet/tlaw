@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from tlaw.mutation import MutationOutcome, generate_mutations, mutate
+from tlaw.mutation import KillKind, MutationOutcome, generate_mutations, mutate
 
 
 IMPLEMENTATION = (
@@ -204,5 +204,28 @@ def test_a_calibrated_timeout_counts_as_a_kill(tmp_path: Path) -> None:
     assert timeout_kills
     for run in timeout_kills:
         assert run.outcome is MutationOutcome.KILLED
+        assert run.kill_kind is KillKind.TIMEOUT
         assert "calibrated timeout" in run.note
-        assert "replay confirmed" in run.note
+        # Rule 3: the retry is timed against a baseline measured next to
+        # it, not the one measured before the mutant loop began.
+        assert "replay confirmed against a baseline re-measured" in run.note
+        # A timeout kill names no law, so it must carry no attribution.
+        assert run.failed_tests == ()
+
+    # Rule 2: kills nothing reported stay countable on their own, so the
+    # numerator cannot borrow weight from them.
+    assert result.killed_by_timeout_count == len(timeout_kills)
+    observed = [
+        run
+        for run in result.runs
+        if run.outcome is MutationOutcome.KILLED and run.kill_kind is KillKind.OBSERVED
+    ]
+    assert len(observed) == result.killed_count - result.killed_by_timeout_count
+    assert all(run.failed_tests for run in observed)
+
+    rendered = result.render_text()
+    assert (
+        "Kills by calibrated timeout (no law attribution):"
+        f" {result.killed_by_timeout_count}" in rendered
+    )
+    assert result.to_dict()["summary"]["killed_by_timeout"] == len(timeout_kills)

@@ -44,8 +44,10 @@ For one frozen implementation and law suite:
 6. run the unchanged laws against every runnable mutation in a fresh copy of
    the boundary directory;
 7. record the exact law and minimized input that rejects each mutation;
-8. rerun every kill once — a kill that does not replay is an error, not a
-   kill; and
+8. rerun every kill once and require the *same evidence* back, not merely
+   the same verdict — same kill kind, same named laws, and for a timeout a
+   freshly re-measured baseline; a kill that does not replay that way is an
+   error, not a kill; and
 9. show every surviving mutation rather than hiding it behind one percentage.
 
 The canary is a default with no opt-out. The failure it prevents is silent
@@ -63,17 +65,23 @@ truth.
 
 Every generated mutation needs one explicit outcome:
 
-- **killed:** the mutant behaved differently from the passing baseline — a
-  law compared false, the mutated implementation raised an exception, or the
-  run exceeded a timeout calibrated against the measured baseline duration;
+- **killed:** the mutant behaved differently from the passing baseline. A
+  kill has a *kind*, because the two ways it can happen are not the same
+  evidence: an **observed** kill means a law compared false or the mutated
+  implementation raised, and the run names the laws that rejected it; a
+  **timeout** kill means the run exceeded a budget calibrated against the
+  measured baseline duration, which is a real behavioral difference that no
+  law reported and that therefore names nothing;
 - **survived:** all laws passed, and the kill-or-survive attribution is
   trusted because the same laws passed the unmutated baseline first;
 - **invalid:** the mutation could not build or load — the baseline collected
   these laws, so a collection failure under a mutant is a load failure,
   never a kill and never a law success;
 - **error:** the harness could not evaluate the mutant, or a kill failed to
-  reproduce on its second fresh run — tlaw claims less strength rather than
-  counting an unrepeatable failure; or
+  reproduce on its second fresh run — including a kill that came back as a
+  different kind, an observed kill that came back naming different laws, and
+  a timeout whose re-measured baseline no longer passes. tlaw claims less
+  strength rather than counting an unrepeatable failure; or
 - **unresolved equivalent:** a survivor whose committed ledger entry explains
   why the change is not observable within the declared boundary.
 
@@ -85,16 +93,43 @@ An exception and an infinite loop are behavior, not infrastructure: only a
 timeout with no measured baseline to calibrate it would be an error, and the
 engine always measures the baseline first.
 
+### Why a kill's kind is load-bearing
+
+A timeout and a law failure are different claims, so neither may confirm the
+other on replay. Two runs that disagree about what happened are not two runs
+agreeing that something happened.
+
+The calibration itself has to be fresh. A budget derived from a baseline
+measured before the mutant loop began can be hours old on a large run; if the
+machine became contended in the meantime, every remaining mutant looks slow
+and two slow runs would confirm each other with no law involved. A timeout
+kill therefore re-measures the baseline immediately before its replay and is
+timed against *that* budget. A baseline that no longer passes leaves no
+calibration at all, which is an error rather than a kill.
+
+Attribution replays too. Which law defends a behavior — the reading
+[`law-first-experiment.md`](law-first-experiment.md) calls the strongest thing
+a mutation report produces — is taken from the killing law names, so two runs
+that name different laws leave that reading unsupported even though both said
+"killed". Only a confirmed observed kill ever carries law names; a downgraded
+run keeps its first run's attribution in its note, as history rather than as a
+law that rejected the mutant.
+
 The truthful strength statement is narrow:
 
 ```text
 Killed 17 of 21 runnable generated mutations.
+Kills by calibrated timeout (no law attribution): 2
 Survivors: 3
 Unresolved equivalent candidates: 1
 Invalid or infrastructure errors: 2
 ```
 
-It must not be shortened to "the module is 81% correct" or "81% covered."
+It must not be shortened to "the module is 81% correct" or "81% covered." The
+timeout line is stated separately for the same reason: those two kills are
+real behavioral differences, but they name no law and can never appear in the
+attribution reading, so the numerator stays decomposable instead of quietly
+borrowing weight from them.
 
 ## The equivalence ledger is law-space
 
