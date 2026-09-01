@@ -46,6 +46,7 @@ testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
+    "crosshair-tool>=0.0.110",
     "numpy>=2.5.1",
     "ruff>=0.15.22",
     "towncrier>=25.8.0",

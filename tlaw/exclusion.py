@@ -155,14 +155,31 @@ def _refuse_unreadable(value: Any, path: str) -> None:
     )
 
 
-def _first_leak(value: Any, forbidden: tuple[Any, ...], path: str) -> Leak | None:
+def _first_leak(
+    value: Any,
+    forbidden: tuple[Any, ...],
+    path: str,
+    visited: set[int],
+) -> Leak | None:
+    descends = isinstance(
+        value, Enum | dict | list | tuple | set | frozenset
+    ) or is_dataclass(value)
+    if descends:
+        identity = id(value)
+        if identity in visited:
+            return None
+        visited.add(identity)
+
     if isinstance(value, Enum):
         # An enum is a name plus a value, both of which reach output.
         # A str/bytes enum is also its own value, so it is searched as
         # text below and this branch only adds the name.
         for attribute in ("name", "value"):
             found = _first_leak(
-                getattr(value, attribute), forbidden, f"{path}.{attribute}"
+                getattr(value, attribute),
+                forbidden,
+                f"{path}.{attribute}",
+                visited,
             )
             if found is not None:
                 return found
@@ -177,6 +194,7 @@ def _first_leak(value: Any, forbidden: tuple[Any, ...], path: str) -> Leak | Non
                 getattr(value, member.name),
                 forbidden,
                 f"{path}.{member.name}",
+                visited,
             )
             if found is not None:
                 return found
@@ -186,17 +204,17 @@ def _first_leak(value: Any, forbidden: tuple[Any, ...], path: str) -> Leak | Non
         for key, item in value.items():
             # Keys are searched too: a leaked identifier used as a map key
             # is exactly as exposed as one used as a value.
-            found = _first_leak(key, forbidden, f"{path}.key({key!r})")
+            found = _first_leak(key, forbidden, f"{path}.key({key!r})", visited)
             if found is not None:
                 return found
-            found = _first_leak(item, forbidden, f"{path}[{key!r}]")
+            found = _first_leak(item, forbidden, f"{path}[{key!r}]", visited)
             if found is not None:
                 return found
         return None
 
     if isinstance(value, list | tuple | set | frozenset):
         for index, item in enumerate(value):
-            found = _first_leak(item, forbidden, f"{path}[{index}]")
+            found = _first_leak(item, forbidden, f"{path}[{index}]", visited)
             if found is not None:
                 return found
         return None
@@ -246,7 +264,7 @@ def excludes(value: Any, /, *forbidden: Any) -> Exclusion:
     return Exclusion(
         value=value,
         forbidden=forbidden,
-        leak=_first_leak(value, forbidden, ""),
+        leak=_first_leak(value, forbidden, "", set()),
     )
 
 

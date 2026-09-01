@@ -215,7 +215,12 @@ def _numeric_gap_and_allowance(
 
 
 def _first_difference(
-    left: Any, right: Any, within: float, relative: float, path: str
+    left: Any,
+    right: Any,
+    within: float,
+    relative: float,
+    path: str,
+    seen_pairs: set[tuple[int, int]],
 ) -> Difference | None:
     left_shape = _array_shape(left)
     right_shape = _array_shape(right)
@@ -302,9 +307,22 @@ def _first_difference(
                 right,
                 f"lengths differ: {len(left)} vs {len(right)}",
             )
+        pair = (id(left), id(right))
+        if pair in seen_pairs:
+            return None
+        # Keep established pairs for the whole comparison. Re-visiting the
+        # same two objects is either a cycle or shared structure; their value
+        # relation cannot change during this pure traversal, so memoization is
+        # both the termination rule and the structural-value semantics.
+        seen_pairs.add(pair)
         for index, (left_item, right_item) in enumerate(zip(left, right)):
             found = _first_difference(
-                left_item, right_item, within, relative, f"{path}[{index}]"
+                left_item,
+                right_item,
+                within,
+                relative,
+                f"{path}[{index}]",
+                seen_pairs,
             )
             if found is not None:
                 return found
@@ -320,9 +338,18 @@ def _first_difference(
             if extra:
                 detail.append(f"only in right: {', '.join(extra)}")
             return Difference(path, left, right, f"keys differ ({'; '.join(detail)})")
+        pair = (id(left), id(right))
+        if pair in seen_pairs:
+            return None
+        seen_pairs.add(pair)
         for key in left:
             found = _first_difference(
-                left[key], right[key], within, relative, f"{path}[{key!r}]"
+                left[key],
+                right[key],
+                within,
+                relative,
+                f"{path}[{key!r}]",
+                seen_pairs,
             )
             if found is not None:
                 return found
@@ -390,5 +417,7 @@ def same(
         right=right,
         within=within_value,
         relative=relative_value,
-        difference=_first_difference(left, right, within_value, relative_value, ""),
+        difference=_first_difference(
+            left, right, within_value, relative_value, "", set()
+        ),
     )

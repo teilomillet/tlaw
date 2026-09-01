@@ -1,0 +1,55 @@
+name: Mutation-grade tlaw core
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/core-evidence.yml"
+      - "scripts/core-evidence"
+      - "self_laws/**"
+      - "tlaw/comparison.py"
+      - "tlaw/exclusion.py"
+      - "tlaw/domains.py"
+      - "tlaw/mutation.py"
+      - "pyproject.toml"
+      - "uv.lock"
+  pull_request:
+    paths:
+      - ".github/workflows/core-evidence.yml"
+      - "scripts/core-evidence"
+      - "self_laws/**"
+      - "tlaw/comparison.py"
+      - "tlaw/exclusion.py"
+      - "tlaw/domains.py"
+      - "tlaw/mutation.py"
+      - "pyproject.toml"
+      - "uv.lock"
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: core-evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutation-grade-core:
+    name: Kill every generated core mutation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.30"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Run the exhaustive self-mutation boundary
+        run: ./scripts/core-evidence

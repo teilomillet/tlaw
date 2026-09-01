@@ -26,6 +26,7 @@ LADDER_TOKENS = {
     "one_of": "``one_of(",
     "raises": "``raises(",
     "record": "``record(",
+    "recursive": "``recursive(",
     "returns": "``returns(",
     "same": "``same(",
     "system": "``system``",

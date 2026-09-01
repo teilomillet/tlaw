@@ -49,6 +49,38 @@ def test_search_descends_into_lists_tuples_and_sets() -> None:
     assert excludes([("a", {"safe"})], HOST).matched
 
 
+def test_a_clean_cycle_is_traversed_once_and_reported_clean() -> None:
+    reply: list[object] = []
+    reply.append(reply)
+
+    assert excludes(reply, HOST).matched
+
+
+def test_a_leak_after_a_cycle_is_still_found() -> None:
+    reply: list[object] = []
+    reply.extend([reply, {"detail": f"connect {HOST}"}])
+
+    exclusion = excludes(reply, HOST)
+
+    assert not exclusion.matched
+    assert "value[1]['detail']" in exclusion.explain()
+
+
+def test_a_cycle_through_a_dataclass_is_safe_and_searchable() -> None:
+    @dataclass
+    class Node:
+        next: Node | None = None
+        detail: str = "safe"
+
+    clean = Node()
+    clean.next = clean
+    leaky = Node(detail=f"connect {HOST}")
+    leaky.next = leaky
+
+    assert excludes(clean, HOST).matched
+    assert not excludes(leaky, HOST).matched
+
+
 def test_a_dataclass_is_descended_into_so_the_leak_is_located_by_field() -> None:
     """anef's failures are nested dataclasses; a bare repr locates nothing."""
 

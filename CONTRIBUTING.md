@@ -79,6 +79,29 @@ change fragment or the exact `Changelog: skip` footer. A
 `chore(release): ...` commit with a staged generated changelog is the release
 exception. The `pre-push` hook runs the same `scripts/gate` command as CI.
 
+## Prove core behavior
+
+Run the shared push gate before handing work off or pushing:
+
+```console
+./scripts/gate
+```
+
+For a changed pure core boundary, also run its independent laws against the
+unchanged implementation and mutation-grade those laws. The repository's
+current exhaustive set is:
+
+```console
+./scripts/core-evidence
+```
+
+The fast gate separately requires every retained CrossHair contract to say
+`Confirmed over all paths`; a timeout or `Not confirmed` is a failure, not a
+weaker kind of pass. The interpretation and limits of each evidence layer are
+documented in `docs/core-evidence.md`. Update that document and the shared
+script when adding a boundary: evidence that only exists in a local transcript
+is not a maintained repository guarantee.
+
 ## Prepare a release
 
 The version remains an explicit human choice. For example, to release 0.0.3:

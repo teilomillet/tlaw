@@ -1,0 +1,11 @@
+#!/bin/sh
+# Exhaustive, replay-confirmed mutation evidence for tlaw's first self-hosted
+# core boundary. Kept separate because it takes minutes rather than seconds.
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+
+uv run tlaw mutate self_laws/comparison_laws.py tlaw/comparison.py
+uv run tlaw mutate self_laws/exclusion_laws.py tlaw/exclusion.py
+uv run tlaw mutate self_laws/domains_laws.py tlaw/domains.py
+
+echo "core-evidence: every generated core mutation was killed"

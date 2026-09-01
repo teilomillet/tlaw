@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 import pytest
@@ -36,6 +37,7 @@ def test_the_authoring_vocabulary_is_present() -> None:
         "integer",
         "list_of",
         "one_of",
+        "recursive",
         "depends",
         "check",
         "diff",
@@ -44,6 +46,14 @@ def test_the_authoring_vocabulary_is_present() -> None:
         "mutate",
     ):
         assert callable(getattr(tlaw, name)), f"{name} must be callable"
+
+
+def test_internal_domain_provenance_is_not_a_public_constructor_argument() -> None:
+    assert tuple(inspect.signature(tlaw.Domain).parameters) == (
+        "description",
+        "strategy",
+        "generates",
+    )
 
 
 def test_import_tlaw_exposes_the_beginner_interface() -> None:

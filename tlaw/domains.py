@@ -5,6 +5,7 @@ What
 ``number(low, high)`` declares a finite float between two bounds.
 ``integer(low, high)`` declares a bounded integer.
 ``list_of(element, ...)`` declares a list of a domain or plain type.
+``recursive(base, extend, ...)`` declares finite recursively nested values.
 ``record(**fields)`` declares a composite: a dict, or a constructor
 applied to the drawn fields.
 ``depends(builder)`` derives a domain from other generated parameters.
@@ -42,6 +43,10 @@ How
 - ``list_of`` accepts a ``Domain`` or a plain type (``int``, ``str``);
   a plain type generates exactly what the bare annotation would, so the
   two spellings never disagree.
+- ``recursive`` starts with a base domain and repeatedly applies a visible
+  extension such as ``list_of``. Its minimum and maximum leaf budgets are
+  explicit, and an extension that hides or ignores the recursive child is
+  refused instead of being presented as recursive evidence.
 - ``record`` accepts the same per field and nests through itself and
   ``list_of``, so a whole structured request is one declaration whose
   shape stays visible in ``--explain``.
@@ -80,9 +85,24 @@ class Domain:
     # refused instead of silently believed. Empty means "not declared",
     # and no check is made — tlaw never guesses a mismatch it cannot prove.
     generates: tuple[type, ...] = field(default=(), repr=False)
+    # Internal provenance for recursive construction. Trusted combinators
+    # propagate an opaque token when their strategy actually consumes the
+    # recursive child; matching description text alone is not evidence.
+    _references: frozenset[object] = field(
+        default_factory=frozenset,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     def __repr__(self) -> str:
         return self.description
+
+
+def _with_references(domain: Domain, references: Iterable[object]) -> Domain:
+    """Attach trusted composition provenance to one new frozen domain."""
+    object.__setattr__(domain, "_references", frozenset(references))
+    return domain
 
 
 @dataclass(frozen=True, eq=False)
@@ -317,6 +337,146 @@ def one_of(values: Iterable[Any]) -> Domain:
     )
 
 
+def recursive(
+    base: Domain | type,
+    extend: Callable[[Domain], Domain],
+    *,
+    min_leaves: int | None = None,
+    max_leaves: int = 100,
+) -> Domain:
+    """Generate finite recursively nested values with a visible leaf budget.
+
+    ``base`` supplies leaves. ``extend`` receives a domain named ``self`` and
+    must return one domain that adds a recursive layer::
+
+        Trees = tlaw.recursive(
+            tlaw.integer(0, 9),
+            lambda child: tlaw.list_of(child, max_size=3),
+            max_leaves=20,
+        )
+
+    The generated strategy has Hypothesis's recursive semantics: it draws a
+    base value or a value reachable by applying ``extend``. ``max_leaves``
+    bounds how many base values one example may contain; ``min_leaves`` can
+    require a non-trivial minimum. Both are leaf counts, not a claimed depth
+    limit.
+
+    The extension's description must contain the child domain. This keeps
+    ``--explain`` honest: a builder that ignores its argument, or hides it in
+    an opaque strategy, is not accepted as a visible recursive contract.
+    """
+    if isinstance(base, Domain):
+        base_description = base.description
+        base_strategy = base.strategy
+        base_generates = base.generates
+        base_references = base._references
+    elif isinstance(base, type):
+        base_description = base.__name__
+        base_strategy = st.from_type(base)
+        base_generates = (base,)
+        base_references = frozenset()
+    else:
+        raise TypeError(
+            "recursive base must be a tlaw domain or a plain type; "
+            f"got {type(base).__name__}"
+        )
+    if not callable(extend):
+        raise TypeError(
+            "recursive extend must be a function that returns a tlaw domain"
+        )
+
+    if isinstance(max_leaves, bool) or not isinstance(max_leaves, int):
+        raise ValueError("max_leaves must be a positive integer")
+    if max_leaves <= 0:
+        raise ValueError("max_leaves must be a positive integer")
+    if min_leaves is not None:
+        if isinstance(min_leaves, bool) or not isinstance(min_leaves, int):
+            raise ValueError("min_leaves must be a positive integer or None")
+        if min_leaves <= 0:
+            raise ValueError("min_leaves must be a positive integer or None")
+        if min_leaves > max_leaves:
+            raise ValueError("min_leaves cannot exceed max_leaves")
+
+    marker = "<tlaw-recursive-self>"
+    reference = object()
+    placeholder = _with_references(
+        Domain(marker, st.nothing()),
+        (reference,),
+    )
+    try:
+        parameters = tuple(inspect.signature(extend).parameters.values())
+    except (TypeError, ValueError) as error:
+        raise TypeError(
+            "recursive extend must accept exactly one child domain"
+        ) from error
+    if len(parameters) != 1 or parameters[0].kind not in (
+        inspect.Parameter.POSITIONAL_ONLY,
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+    ):
+        raise TypeError("recursive extend must accept exactly one child domain")
+
+    preview = extend(placeholder)
+    if not isinstance(preview, Domain):
+        raise TypeError(
+            f"recursive extend must return a tlaw domain; got {type(preview).__name__}"
+        )
+    if marker not in preview.description:
+        raise ValueError(
+            "recursive extend must use the child domain in its visible shape"
+        )
+    if reference not in preview._references:
+        raise ValueError(
+            "recursive extend must compose the child through a tlaw domain "
+            "builder; description text alone does not prove recursion"
+        )
+    extension_description = preview.description.replace(marker, "self")
+
+    def extend_strategy(children: SearchStrategy[Any]) -> SearchStrategy[Any]:
+        extended = extend(
+            _with_references(
+                Domain(marker, children),
+                (reference,),
+            )
+        )
+        if not isinstance(extended, Domain):
+            raise TypeError(
+                "recursive extend must always return a tlaw domain; "
+                f"got {type(extended).__name__}"
+            )
+        if extended.description != preview.description:
+            raise ValueError("recursive extend must declare one stable visible shape")
+        if reference not in extended._references:
+            raise ValueError("recursive extend must always compose the recursive child")
+        return extended.strategy
+
+    described_budget = []
+    if min_leaves is not None:
+        described_budget.append(f"min_leaves={min_leaves}")
+    described_budget.append(f"max_leaves={max_leaves}")
+    description = (
+        f"recursive({base_description}, extend={extension_description}, "
+        f"{', '.join(described_budget)})"
+    )
+    generates = (
+        tuple(dict.fromkeys((*base_generates, *preview.generates)))
+        if base_generates and preview.generates
+        else ()
+    )
+    return _with_references(
+        Domain(
+            description=description,
+            strategy=st.recursive(
+                base_strategy,
+                extend_strategy,
+                min_leaves=min_leaves,
+                max_leaves=max_leaves,
+            ),
+            generates=generates,
+        ),
+        base_references,
+    )
+
+
 def record(constructor: Callable[..., Any] | None = None, /, **fields: Any) -> Domain:
     """A value with fixed named fields, each drawn from its own domain.
 
@@ -385,6 +545,7 @@ def record(constructor: Callable[..., Any] | None = None, /, **fields: Any) -> D
         )
 
     described: list[str] = []
+    references: set[object] = set()
     specifications: dict[str, SearchStrategy[Any] | DependentDomain] = {}
     for name, specification in fields.items():
         if isinstance(specification, DependentDomain):
@@ -393,6 +554,7 @@ def record(constructor: Callable[..., Any] | None = None, /, **fields: Any) -> D
         elif isinstance(specification, Domain):
             described.append(f"{name}={specification.description}")
             specifications[name] = specification.strategy
+            references.update(specification._references)
         elif isinstance(specification, type):
             described.append(f"{name}={specification.__name__}")
             specifications[name] = st.from_type(specification)
@@ -457,17 +619,23 @@ def record(constructor: Callable[..., Any] | None = None, /, **fields: Any) -> D
         )
 
     if constructor is None:
-        return Domain(
-            description=description,
-            strategy=fields_strategy,
-            generates=(dict,),
+        return _with_references(
+            Domain(
+                description=description,
+                strategy=fields_strategy,
+                generates=(dict,),
+            ),
+            references,
         )
-    return Domain(
-        description=description,
-        strategy=fields_strategy.map(lambda drawn: constructor(**drawn)),
-        # A class states what it builds; any other callable does not, and
-        # tlaw never claims a generated type it cannot prove.
-        generates=(constructor,) if isinstance(constructor, type) else (),
+    return _with_references(
+        Domain(
+            description=description,
+            strategy=fields_strategy.map(lambda drawn: constructor(**drawn)),
+            # A class states what it builds; any other callable does not, and
+            # tlaw never claims a generated type it cannot prove.
+            generates=(constructor,) if isinstance(constructor, type) else (),
+        ),
+        references,
     )
 
 
@@ -486,9 +654,11 @@ def list_of(
     if isinstance(element, Domain):
         element_description = element.description
         element_strategy = element.strategy
+        references = element._references
     elif isinstance(element, type):
         element_description = element.__name__
         element_strategy = st.from_type(element)
+        references = frozenset()
     else:
         raise TypeError(
             "list_of element must be a tlaw domain or a plain type; "
@@ -510,8 +680,15 @@ def list_of(
         described.append(f"min_size={min_size}")
     if max_size is not None:
         described.append(f"max_size={max_size}")
-    return Domain(
-        description=f"list_of({', '.join(described)})",
-        strategy=st.lists(element_strategy, min_size=min_size, max_size=max_size),
-        generates=(list,),
+    return _with_references(
+        Domain(
+            description=f"list_of({', '.join(described)})",
+            strategy=st.lists(
+                element_strategy,
+                min_size=min_size,
+                max_size=max_size,
+            ),
+            generates=(list,),
+        ),
+        references,
     )

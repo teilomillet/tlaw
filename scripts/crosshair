@@ -1,0 +1,28 @@
+#!/bin/sh
+# Require independent symbolic confirmation, not merely "no counterexample
+# found before timeout". CrossHair exits zero for both, so the report itself
+# is part of this gate's evidence contract.
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+
+report=$(
+    uv run crosshair check \
+        --analysis_kind=asserts \
+        --per_condition_timeout=10 \
+        --report_all \
+        verification/crosshair_contracts.py
+)
+printf '%s\n' "$report"
+
+if printf '%s\n' "$report" | rg -q "Not confirmed"; then
+    echo "crosshair: at least one symbolic contract was not confirmed" >&2
+    exit 1
+fi
+
+confirmed=$(printf '%s\n' "$report" | rg -c "Confirmed over all paths\\.")
+if [ "$confirmed" -ne 4 ]; then
+    echo "crosshair: expected 4 confirmed contracts, found $confirmed" >&2
+    exit 1
+fi
+
+echo "crosshair: every symbolic contract confirmed"

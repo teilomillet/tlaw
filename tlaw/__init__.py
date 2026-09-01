@@ -26,7 +26,9 @@ Generating inputs — what the annotation says:
 2. ``number(lo, hi)`` / ``integer(lo, hi)`` / ``one_of(...)`` — when the
    plain type is broader than the real domain.
 3. ``list_of(...)`` — a list of a domain, with visible size bounds.
-4. ``depends(...)`` / ``record(...)`` — when inputs are *related*: one bounds
+4. ``recursive(...)`` — finite recursively nested values with a visible leaf
+   budget.
+5. ``depends(...)`` / ``record(...)`` — when inputs are *related*: one bounds
    another, or a record's fields must agree.
 
 When behavior mutates state, describe two paths from fresh starts instead:
@@ -73,6 +75,7 @@ from .domains import (
     number,
     one_of,
     record,
+    recursive,
 )
 from .exclusion import Exclusion, excludes
 from .law_diff import LawChange, LawDiffResult, diff
@@ -133,6 +136,7 @@ __all__ = [
     "one_of",
     "raises",
     "record",
+    "recursive",
     "replay",
     "returns",
     "same",

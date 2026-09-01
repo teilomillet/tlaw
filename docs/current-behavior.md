@@ -157,7 +157,7 @@ elsewhere.
 ## Visible input domains
 
 Ordinary annotations such as `int`, `str`, and `list[int]` use Hypothesis's
-type inference. Five concrete tlaw domain builders are also implemented:
+type inference. Six concrete tlaw domain builders are also implemented:
 
 ```python
 Reward = tlaw.number(0, 1)
@@ -194,6 +194,29 @@ defined. Domain descriptions appear in `--explain`, for example:
 ```text
 rewards: list_of(number(0, 1), min_size=1, max_size=20)
 ```
+
+`recursive(base, extend, min_leaves=None, max_leaves=100)` generates finite
+recursive values. `base` is a domain or plain type. The extension accepts
+exactly one positional child domain and must return a domain whose visible
+description contains that child and whose strategy composes it through a tlaw
+domain builder. An ignored child, description-only reference, non-domain
+result, or shape that changes between calls is rejected rather than presented
+as a recursive contract:
+
+```python
+Tree = tlaw.recursive(
+    tlaw.integer(0, 9),
+    lambda child: tlaw.list_of(child, max_size=3),
+    min_leaves=1,
+    max_leaves=20,
+)
+```
+
+The leaf bounds are positive integers, with `min_leaves <= max_leaves`, and
+count generated base values rather than depth. `--explain` renders the example
+as `recursive(integer(0, 9), extend=list_of(self, max_size=3), min_leaves=1,
+max_leaves=20)`. The generated-type declaration is the union of the provable
+base and extension types; when either is unknown, tlaw makes no type claim.
 
 Bare runtime domains used as annotations must be module-level names so
 postponed string annotations can resolve them. They are values rather than
@@ -390,6 +413,9 @@ The current structural rules are:
 - strings and bytes compare exactly and preserve their type distinction;
 - lists and tuples compare item by item;
 - dictionaries require the same keys and compare values recursively;
+- recursive list and dictionary graphs use pair memoization: revisiting the
+  same left/right container pair establishes that already-observed relation,
+  while differences on finite paths beside a cycle are still reported;
 - objects exposing `shape`, `dtype`, and `tolist()` have their explicit shapes
   compared first, then are converted to nested Python values. Checking shape
   separately distinguishes empty arrays such as `(0, 2)` and `(0, 3)`, which
@@ -504,6 +530,11 @@ one used as a value; lists, tuples, and sets are searched item by item; a
 dataclass is descended into by declared field name, so a failure reports
 `found at value.error.issues[0]` rather than one repr of the whole structure;
 and an enum is searched through its name and value.
+
+Recursive containers and dataclasses are visited once by identity, so a clean
+cycle terminates and a leak elsewhere on a finite reachable path is still
+located. The same forbidden fragments apply for the entire traversal, making
+revisiting an object unnecessary.
 
 A value whose content tlaw cannot establish is **refused**, naming the path
 it was reached at. tlaw reads text, bytes, the primitives whose `repr` the
@@ -658,7 +689,8 @@ contradicted entries are printed as stale.
 
 The top-level package exports `law`, `system`, `same`, `raises`, `returns`,
 `excludes`, `number`,
-`integer`, `one_of`, `list_of`, `record`, `depends`, `check`, `check_folder`,
+`integer`, `one_of`, `list_of`, `recursive`, `record`, `depends`, `check`,
+`check_folder`,
 `discover_law_files`, `replay`, `diff`, `audit`, and `mutate`, plus their result
 and error types, including `FolderCheckResult`. Runner functions return
 structured objects with text and JSON renderers where applicable.
@@ -671,7 +703,7 @@ produce evidence.
 ## Not implemented
 
 - arbitrary or composable domain predicates beyond the implemented numeric,
-  finite-choice, list, record, and dependent domains;
+  finite-choice, list, recursive, record, and dependent domains;
 - a relation reaching *across* scopes — a record field cannot depend on a law
   parameter, and a law parameter cannot depend on a record's field; each
   `depends` sees one namespace and says so when a name is not in it;

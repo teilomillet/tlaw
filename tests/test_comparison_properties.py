@@ -38,6 +38,40 @@ def test_every_value_is_the_same_as_itself(value: object) -> None:
     assert bool(comparison) is True
 
 
+def test_distinct_self_referential_lists_compare_coinductively() -> None:
+    left: list[object] = []
+    right: list[object] = []
+    left.append(left)
+    right.append(right)
+
+    assert same(left, right).matched
+
+
+def test_a_difference_next_to_a_cycle_is_still_found_at_its_finite_path() -> None:
+    left: list[object] = []
+    right: list[object] = []
+    left.extend([left, {"value": 1}])
+    right.extend([right, {"value": 2}])
+
+    comparison = same(left, right)
+
+    assert not comparison.matched
+    assert comparison.difference.path == "[1]['value']"
+    assert comparison.difference.left == 1
+    assert comparison.difference.right == 2
+
+
+def test_a_cyclic_value_does_not_equal_a_finite_truncation() -> None:
+    cyclic: list[object] = []
+    cyclic.append(cyclic)
+
+    comparison = same(cyclic, [[]])
+
+    assert not comparison.matched
+    assert comparison.difference.path == "[0]"
+    assert "lengths differ" in comparison.difference.reason
+
+
 @given(left=values, right=values, within=st.floats(min_value=0, max_value=1e6))
 def test_matching_is_symmetric(left: object, right: object, within: float) -> None:
     assert same(left, right, within=within).matched is (
@@ -65,6 +99,34 @@ def test_exact_is_the_default_and_the_failure_explains_itself() -> None:
     assert "within=0.0" in comparison.explain()
 
     assert same(0.1 + 0.2, 0.3, within=1e-12).matched
+
+
+def test_root_failure_rendering_has_no_duplicate_whole_value_lines() -> None:
+    assert same(1, 2).explain().splitlines() == [
+        "first difference at value:",
+        "  left:  1",
+        "  right: 2",
+        "  absolute difference 1 exceeds within=0.0",
+    ]
+
+
+def test_nested_failure_rendering_retains_both_complete_values() -> None:
+    explanation = same({"items": [1]}, {"items": [2]}).explain()
+
+    assert "first difference at value['items'][0]:" in explanation
+    assert "left:  {'items': [1]}" in explanation
+    assert "right: {'items': [2]}" in explanation
+
+
+def test_failure_rendering_truncates_only_after_the_exact_limit() -> None:
+    exactly_at_limit = "x" * 198  # quotes make repr exactly 200 characters
+    above_limit = "x" * 199
+
+    exact = same(exactly_at_limit, "different").explain()
+    truncated = same(above_limit, "different").explain()
+
+    assert "... (200 characters)" not in exact
+    assert "... (201 characters)" in truncated
 
 
 def test_nan_never_compares_equal_and_says_so() -> None:

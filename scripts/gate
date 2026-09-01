@@ -11,8 +11,9 @@
 #   2. pending changelog fragments are valid and renderable;
 #   3. ruff lint and formatting;
 #   4. the full property suite;
-#   5. the flat example laws still pass; and
-#   6. the flat examples still kill their generated mutants — the repo
+#   5. independent symbolic contracts are confirmed over all paths;
+#   6. tlaw's core self-laws and flat example laws still pass; and
+#   7. the flat examples still kill their generated mutants — the repo
 #      dogfoods its own strength meter on every push.
 set -eu
 cd "$(git rev-parse --show-toplevel)"
@@ -22,6 +23,10 @@ uv run towncrier build --draft >/dev/null
 uv run ruff check .
 uv run ruff format --check .
 uv run pytest -q
+./scripts/crosshair
+# Core self-laws stay in the fast gate. Their exhaustive mutation campaign
+# lives in scripts/core-evidence and a dedicated CI workflow.
+uv run tlaw check self_laws/
 # Folder discovery checks every example's laws in one command, which also
 # dogfoods `tlaw check <folder>` on every push.
 uv run tlaw check examples/

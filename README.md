@@ -30,9 +30,9 @@ domains, structural comparison, stateful paths, and mutation evidence:
   law;
 - simple annotations such as `str`, `int`, and `list[int]` supply generated
   inputs;
-- `number(...)`, `integer(...)`, `one_of(...)`, and `list_of(...)` define
-  visible finite-float, bounded-integer, finite-choice, and list domains
-  without Hypothesis syntax;
+- `number(...)`, `integer(...)`, `one_of(...)`, `list_of(...)`, and
+  `recursive(...)` define visible finite-float, bounded-integer,
+  finite-choice, list, and finite recursive domains without Hypothesis syntax;
 - `record(...)` composes named fields into a dictionary or a constructed
   value, and nests, so a whole structured request is one visible domain;
 - `depends(...)` derives one parameter's domain from another's generated
@@ -67,9 +67,9 @@ domains, structural comparison, stateful paths, and mutation evidence:
 
 Important pieces are still intentionally absent: domain predicates and nested
 domain positions beyond the implemented `number`, `integer`, `list_of`,
-`one_of`, `record`, `depends`, and supported `Annotated` forms; relations
-across a record's field scope and a law's parameter scope; observing that a
-collaborator was *not* called, which is a decided non-goal — tlaw sequences
+`one_of`, `recursive`, `record`, `depends`, and supported `Annotated` forms;
+relations across a record's field scope and a law's parameter scope; observing
+that a collaborator was *not* called, which is a decided non-goal — tlaw sequences
 the calls a law makes and does not spy; opt-in third-party pytest plugins;
 and impact graphs.
 
@@ -145,6 +145,7 @@ What the annotation generates:
 | `values: list[int]` | a plain type covers the real inputs — start here |
 | `number(lo, hi)` · `integer(lo, hi)` · `one_of(...)` | the plain type is broader than the real domain |
 | `list_of(...)` | a list of a domain, with visible size bounds |
+| `recursive(base, extend, ...)` | values recursively contain the same visible domain, within a finite leaf budget |
 | `depends(...)` · `record(...)` | inputs are **related**: one bounds another, or a record's fields must agree |
 
 When behavior mutates state, describe [two paths from fresh starts](#describe-stateful-paths)
@@ -251,7 +252,25 @@ means exact comparison. For values whose magnitude is large or unknown, add
 [rescale example](https://github.com/teilomillet/tlaw/blob/main/examples/rescale/README.md)
 shows why a numerical refactor needs it. `same` also compares nested lists,
 tuples, dictionaries, and array-like objects exposing `shape`, `dtype`, and
-`tolist()`.
+`tolist()`. Recursive list and dictionary graphs terminate: revisiting the
+same left/right container pair means that relation is already established,
+while a difference on any finite path is still reported.
+
+A recursive input domain uses the same visible vocabulary:
+
+```python
+Tree = tlaw.recursive(
+    tlaw.integer(0, 9),
+    lambda child: tlaw.list_of(child, max_size=3),
+    max_leaves=20,
+)
+```
+
+The builder must accept exactly one child domain, compose it through a tlaw
+domain builder, expose that child in the description, and keep the same visible
+shape on every call. `min_leaves` and `max_leaves` count base values, not depth;
+invalid, description-only, or vacuous declarations are rejected when the
+domain is defined.
 
 `same` states only a relationship. Two implementations that both return an
 empty result satisfy an equivalence law even when the domain says each should
@@ -312,12 +331,15 @@ tlaw check path/to/feature/laws.py --explain
 ```
 
 This repository enforces itself with one visible gate, `scripts/gate`: the
-committed dependency lock, ruff, the full property suite, and `tlaw check`
-on the whole `examples/` folder plus `tlaw mutate` on the flat examples — the
-repo dogfoods its own strength
-meter on every push. CI pins uv and runs the gate on every push and pull
-request (`.github/workflows/ci.yml`), and the same file runs locally before
-each push once the hook is installed:
+committed dependency lock, ruff, the full property suite, independently
+confirmed CrossHair contracts, tlaw's self-laws, `tlaw check` on the whole
+`examples/` folder, and `tlaw mutate` on the flat examples. A separate
+scheduled and path-triggered workflow runs the slower exhaustive mutation
+grade for the core value boundaries. The exact claim and its limits are in
+[core evidence](https://github.com/teilomillet/tlaw/blob/main/docs/core-evidence.md).
+CI pins uv and runs the gate on every push and pull request
+(`.github/workflows/ci.yml`), and the same file runs locally before each push
+once the hook is installed:
 
 ```console
 git config core.hooksPath .githooks
@@ -594,9 +616,15 @@ tlaw is itself developed property-first:
 uv run pytest -q
 uv run ruff check .
 uv run ruff format --check .
+./scripts/crosshair
+uv run tlaw check self_laws/
+./scripts/core-evidence
 ```
 
 The precise implemented surface is recorded in
 [current tlaw behavior](https://github.com/teilomillet/tlaw/blob/main/docs/current-behavior.md), and the independent challenge
 rules are recorded in
 [generated mutation evidence](https://github.com/teilomillet/tlaw/blob/main/docs/mutation-evidence.md).
+The repository-specific composition of symbolic, property, and mutation
+evidence is recorded in
+[core evidence](https://github.com/teilomillet/tlaw/blob/main/docs/core-evidence.md).
