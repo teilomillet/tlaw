@@ -790,10 +790,18 @@ class MutationResult:
     @property
     def has_errors(self) -> bool:
         canary_failed = self.canary is not None and self.canary.wired is not True
-        return (not self.baseline_valid) or canary_failed or self.error_count > 0
+        no_challenges = not self.runs
+        return (
+            (not self.baseline_valid)
+            or canary_failed
+            or no_challenges
+            or self.error_count > 0
+        )
 
     @property
     def statement(self) -> str:
+        if not self.runs:
+            return "No supported mutations were generated; no mutation evidence exists."
         return (
             f"Killed {self.killed_count} of {self.runnable_total} "
             "runnable generated mutations."
@@ -856,6 +864,7 @@ class MutationResult:
                 "invalid": self.invalid_count,
                 "errors": self.error_count,
                 "runnable": self.runnable_total,
+                "generated": len(self.runs),
                 "statement": self.statement,
                 "has_errors": self.has_errors,
             },
@@ -896,6 +905,8 @@ class MutationResult:
             MutationOutcome.ERROR: "ERROR",
             MutationOutcome.UNRESOLVED_EQUIVALENT: "UNRESOLVED EQUIVALENT",
         }
+        if not self.runs:
+            lines.append("- NONE — INVALID EVIDENCE (no supported mutation sites)")
         for run in self.runs:
             detail = f" ({run.note})" if run.note else ""
             # Attribution is shown only for a confirmed observed kill. A

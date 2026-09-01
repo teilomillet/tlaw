@@ -49,6 +49,24 @@ def test_impossible_domains_are_refused_when_defined() -> None:
         tlaw.list_of(int, min_size=2, max_size=1)
 
 
+@pytest.mark.parametrize("bound", [2**53 + 1, -(2**53 + 1), 10**400])
+def test_number_refuses_integer_bounds_it_cannot_represent_exactly(bound: int) -> None:
+    """The visible integer bound must not be rounded into a wider domain."""
+    with pytest.raises(ValueError, match="exactly representable as a finite float"):
+        tlaw.number(bound, bound)
+
+
+@given(data=st.data())
+def test_number_accepts_the_largest_consecutive_exact_integer_bound(
+    data: st.DataObject,
+) -> None:
+    bound = 2**53
+
+    domain = tlaw.number(bound, bound)
+
+    assert data.draw(domain.strategy) == float(bound)
+
+
 def test_dependencies_are_named_and_resolved_explicitly() -> None:
     dependent = tlaw.depends(lambda high: tlaw.integer(1, high))
 

@@ -95,4 +95,6 @@ git push origin main
 Review the generated changelog before committing it. Towncrier consumes the
 fragments, so the release commit includes their deletions. The PyPI workflow
 refuses to publish when fragments remain or when `CHANGELOG.md` has no entry
-for the version in `pyproject.toml`.
+for the version in `pyproject.toml`. It then reruns `./scripts/gate` before
+building any distribution, so publishing cannot succeed while the separate CI
+gate is failing.

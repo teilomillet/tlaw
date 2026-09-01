@@ -163,11 +163,9 @@ jobs:
               )
           PY
 
-      - name: Lint the release
-        run: uv run ruff check .
-
-      - name: Run the test suite
-        run: uv run pytest -q
+      - name: Run the complete repository gate
+        # Publishing must not race past a failure in the separate CI workflow.
+        run: ./scripts/gate
 
       - name: Build the source and wheel distributions
         run: uv build --clear

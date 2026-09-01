@@ -210,7 +210,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         print(result.render_text())
         if args.json_path is not None:
-            args.json_path.write_text(result.to_json(), encoding="utf-8")
+            try:
+                _write_report(args.json_path, result.to_json())
+            except ManifestError as error:
+                print(f"tlaw: {error}", file=sys.stderr)
+                return 2
             print(f"JSON: {args.json_path}")
         # Exit-code contract, mirroring `tlaw audit`: 2 means the evidence
         # itself is broken (invalid baseline or harness errors), 1 means
@@ -231,7 +235,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     print(result.render_text())
     if args.json_path is not None:
-        args.json_path.write_text(result.to_json(), encoding="utf-8")
+        try:
+            _write_report(args.json_path, result.to_json())
+        except ManifestError as error:
+            print(f"tlaw: {error}", file=sys.stderr)
+            return 2
         print(f"JSON: {args.json_path}")
 
     if result.has_errors:

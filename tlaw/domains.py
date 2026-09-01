@@ -33,7 +33,9 @@ How
 ---
 - ``number`` generates finite floats only: no NaN, no infinity, both
   bounds included. Bounds must themselves be finite numbers with
-  ``low <= high`` — an impossible domain is rejected at definition time,
+  ``low <= high``; integer bounds must be exactly representable as floats
+  so the generated domain cannot silently extend beyond the visible bounds.
+  An impossible or unrepresentable domain is rejected at definition time,
   not discovered as a confusing generation error later.
 - ``integer`` generates integers with both bounds included and rejects
   bools, non-integer bounds, and reversed bounds at definition time.
@@ -206,9 +208,20 @@ def generation_order(
 def _bound(value: Any, *, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise TypeError(f"{name} must be a number")
-    if not math.isfinite(value):
+    try:
+        converted = float(value)
+    except OverflowError as error:
+        raise ValueError(
+            f"{name} must be exactly representable as a finite float"
+        ) from error
+    if not math.isfinite(converted):
         raise ValueError(f"{name} must be finite; a domain states real bounds")
-    return float(value)
+    if isinstance(value, int) and int(converted) != value:
+        raise ValueError(
+            f"{name} must be exactly representable as a finite float; "
+            f"{value!r} would round to {converted!r}"
+        )
+    return converted
 
 
 def number(low: int | float, high: int | float) -> Domain:
@@ -217,7 +230,9 @@ def number(low: int | float, high: int | float) -> Domain:
     Never generates NaN or infinity: a law that genuinely accepts those
     must say so explicitly with a Hypothesis strategy, because silently
     including them would make the visible contract lie in one direction,
-    and silently excluding them from ``float`` lies in the other.
+    and silently excluding them from ``float`` lies in the other. An integer
+    bound must be exactly representable as a finite float, because rounding it
+    would make the displayed and generated bounds disagree.
     """
     low_bound = _bound(low, name="low")
     high_bound = _bound(high, name="high")

@@ -347,20 +347,21 @@ def check_folder(
     return FolderCheckResult(directory=str(root), results=results)
 
 
-def _replay_law_path(report: dict[str, Any], report_path: Path) -> Path:
+def _replay_law_path(report: dict[str, Any], report_path: Path) -> tuple[Path, Path]:
     recorded = Path(report["law_file"])
+    current_root = Path.cwd().resolve()
     candidates = (
-        [recorded]
+        [(recorded, current_root)]
         if recorded.is_absolute()
         else [
-            Path.cwd() / recorded,
-            report_path.parent / recorded,
+            (current_root / recorded, current_root),
+            (report_path.parent / recorded, report_path.parent),
         ]
     )
-    for candidate in candidates:
+    for candidate, identity_root in candidates:
         resolved = candidate.resolve()
         if resolved.suffix == ".py" and resolved.is_file():
-            return resolved
+            return resolved, identity_root.resolve()
     raise ManifestError(
         f"replay law file does not exist: {report['law_file']}; "
         "run replay from the repository root or restore that path"
@@ -377,13 +378,13 @@ def replay(
         raise ValueError("timeout_seconds must be positive")
     path = Path(report_path).resolve()
     report = load_report(path)
-    law_path = _replay_law_path(report, path)
+    law_path, identity_root = _replay_law_path(report, path)
     environment = _environment(explain=False)
     environment.pop(CAPTURE_ENV, None)
     environment.pop(MODE_ENV, None)
     environment.pop(SEED_ENV, None)
     environment[REPLAY_ENV] = str(path)
-    environment[REPLAY_ROOT_ENV] = str(Path.cwd().resolve())
+    environment[REPLAY_ROOT_ENV] = str(identity_root)
     pytest_exit_code, output = _run_pytest(
         law_path,
         environment=environment,

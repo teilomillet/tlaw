@@ -1,6 +1,6 @@
 # Current tlaw behavior
 
-Status: implemented and verified on 2026-07-24. This document describes what
+Status: implemented and verified on 2026-09-01. This document describes what
 the current repository code does today. Design documents may describe future
 directions; this file does not.
 
@@ -149,8 +149,10 @@ cannot be produced. A plain `check` in a CI gate therefore reports a genuine
 defect as a defect rather than as a broken harness.
 
 Law paths are relative when the law lives below the directory where `check`
-was launched. Run search and replay from the repository root so a report can
-move with the repository to another machine.
+was launched. Replay first resolves such a path from the current directory,
+then from the retained report's directory. A report kept at a checkout root
+therefore replays from that checkout even when the command is launched
+elsewhere.
 
 ## Visible input domains
 
@@ -170,6 +172,9 @@ def rewards_stay_in_range(rewards: Rewards) -> bool:
 
 `number(low, high)` generates finite floats with both bounds included. It
 rejects non-numeric, non-finite, or reversed bounds when the domain is defined.
+An integer bound must also be exactly representable as a finite float; otherwise
+including that displayed bound is impossible and silently rounding it would
+widen the visible domain.
 
 `integer(low, high)` generates bounded integers, both bounds included, with
 the same definition-time validation. It exists because the kvfit probe
@@ -564,9 +569,9 @@ observe that copy.
 | `tlaw check --replay report.json` | Runs exactly the retained law inputs and no neighboring tests. | `0` when every failure is reproduced exactly, `1` when behavior differs, `2` for invalid evidence. |
 | `tlaw diff BASE..HEAD` | Parses tlaw laws from two Git revisions without executing them and reports the law-space difference. | `0` for no law changes, `1` when law changes are present, `2` for an invalid range or unreadable source. |
 | `tlaw audit audit.py` | Runs one declared baseline and declared known-wrong implementations from a Python `Lawbook`. Legacy TOML manifests also work. | `0` when all declared wrong implementations are rejected, `1` when one survives, `2` for invalid evidence. |
-| `tlaw audit audit.py --json report.json` | Also writes the stable `tlaw.audit/v1` JSON report. | Same as `audit`. |
-| `tlaw mutate laws.py implementation.py` | Generates deterministic, single-site mutations of one implementation module and runs the unchanged laws in isolated copies of the selected directory or package boundary. | `0` when no unexplained survivor or harness error remains, `1` when a survivor remains, `2` for invalid baseline or harness errors. |
-| `tlaw mutate ... --json report.json` | Also writes the stable `tlaw.mutation/v1` JSON report. | Same as `mutate`. |
+| `tlaw audit audit.py --json report.json` | Also writes the stable `tlaw.audit/v1` JSON report. | Same as `audit`, except `2` when the requested report cannot be written. |
+| `tlaw mutate laws.py implementation.py` | Generates deterministic, single-site mutations of one implementation module and runs the unchanged laws in isolated copies of the selected directory or package boundary. | `0` when every generated challenge is killed or explained, `1` when a survivor remains, `2` for no generated challenges, an invalid baseline, or harness errors. |
+| `tlaw mutate ... --json report.json` | Also writes the stable `tlaw.mutation/v1` JSON report. | Same as `mutate`, except `2` when the requested report cannot be written. |
 
 `mutate` supports two boundary shapes, chosen automatically:
 
@@ -616,6 +621,12 @@ Because a `timeout` kill names no law, the report counts those separately:
 law attribution)` line in the text report when any exist. They remain kills
 and stay in the numerator; the separate count keeps that numerator
 decomposable.
+
+If the selected implementation contains no supported mutation sites, there is
+nothing to challenge: the report keeps an empty mutation list, records
+`summary.generated` as `0`, and reports invalid evidence with exit code `2`
+instead of treating zero survivors as success. No canary is run in that case.
+
 
 Before any mutant is scored, `mutate` runs a canary by default, with no
 opt-out: a poisoned copy of the implementation in which every function
