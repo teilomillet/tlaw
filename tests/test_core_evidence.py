@@ -18,6 +18,14 @@ def test_push_gate_runs_symbolic_contracts_and_fast_self_laws() -> None:
     )
 
 
+def test_symbolic_gate_uses_only_portable_report_tools() -> None:
+    crosshair = (ROOT / "scripts" / "crosshair").read_text(encoding="utf-8")
+
+    assert "grep -q" in crosshair
+    assert "grep -c" in crosshair
+    assert "rg " not in crosshair
+
+
 def test_core_evidence_mutates_each_declared_core_boundary_once() -> None:
     evidence = (ROOT / "scripts" / "core-evidence").read_text(encoding="utf-8")
 

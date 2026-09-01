@@ -14,12 +14,12 @@ report=$(
 )
 printf '%s\n' "$report"
 
-if printf '%s\n' "$report" | rg -q "Not confirmed"; then
+if printf '%s\n' "$report" | grep -q "Not confirmed"; then
     echo "crosshair: at least one symbolic contract was not confirmed" >&2
     exit 1
 fi
 
-confirmed=$(printf '%s\n' "$report" | rg -c "Confirmed over all paths\\.")
+confirmed=$(printf '%s\n' "$report" | grep -c "Confirmed over all paths\\.")
 if [ "$confirmed" -ne 4 ]; then
     echo "crosshair: expected 4 confirmed contracts, found $confirmed" >&2
     exit 1
