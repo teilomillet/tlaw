@@ -6,6 +6,45 @@ files into this document when the release is prepared.
 
 <!-- towncrier release notes start -->
 
+## 0.0.11 — 2026-10-23
+
+### Added
+
+- Add a manual release preflight that runs the complete publish verification
+  without uploading, and make failed publishes recoverable by rerunning the
+  workflow.
+- Expose `Lawbook` as `tlaw.Lawbook` for Python audit declarations, while
+  keeping the `tlaw.book.Lawbook` import path.
+
+### Changed
+
+- Support pytest 8.4.2 and newer, so tlaw installs alongside projects that have
+  not moved to pytest 9.
+- Tag each release, create a GitHub Release with the verified distributions,
+  and upload PEP 740 provenance attestations.
+
+### Deprecated
+
+- TOML audit manifests are deprecated; describe the audit in a Python lawbook
+  (`audit.py`) instead.
+
+### Fixed
+
+- Report a generated input that tlaw cannot verify as invalid evidence (exit 2)
+  instead of refuting the law.
+- Report an unsupported `--exhaustive` domain as a concise error with its
+  actionable message instead of a pytest collection traceback.
+- Running `tlaw check` no longer writes `.hypothesis` or `__pycache__` caches
+  into the checked project, and it pins `PYTHONHASHSEED=0` so retained
+  counterexamples replay deterministically.
+
+### Known limitations
+
+- Document that a generated value whose deep copy compares unequal can still be
+  reported as a law refutation; the purity guard is a known limitation, not a
+  proof of mutation.
+
+
 ## 0.0.10 — 2026-10-23
 
 ### Added
