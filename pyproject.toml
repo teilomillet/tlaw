@@ -22,9 +22,13 @@ classifiers = [
     "Topic :: Software Development :: Testing",
     "Typing :: Typed",
 ]
+# tlaw runs pytest inside the project's own environment. 8.4.2 is the
+# oldest version whose child-process plugin behavior tlaw tests directly;
+# the repository's own suite runs on pytest 9 through the dev group below,
+# so the runtime floor stays as low as the exercised evidence allows.
 dependencies = [
     "hypothesis>=6.160.0",
-    "pytest>=9.1.1",
+    "pytest>=8.4.2",
 ]
 
 [project.urls]
@@ -48,6 +52,7 @@ testpaths = ["tests"]
 dev = [
     "crosshair-tool>=0.0.110",
     "numpy>=2.5.1",
+    "pytest>=9.1.1",
     "ruff>=0.15.22",
     "towncrier>=25.8.0",
 ]
