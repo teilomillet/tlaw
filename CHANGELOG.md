@@ -88,6 +88,8 @@ files into this document when the release is prepared.
 
 ## 0.0.5 — 2026-07-27
 
+Version 0.0.5 was never published to PyPI; its changes shipped in 0.0.6.
+
 ### Added
 
 - Add `Comparison.and_then(...)` to chain another claim without losing the

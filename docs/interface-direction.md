@@ -1,9 +1,9 @@
 # tlaw interface direction
 
-Status: working product direction. The beginner form, visible domains,
-`tlaw.same`, and the first generated-mutation boundary are implemented. See
-[current tlaw behavior](current-behavior.md) for executable facts; this document
-also contains future direction.
+Status: working product direction, last revised 2026-07-24. The beginner
+form, visible domains, `tlaw.same`, and the first generated-mutation boundary
+are implemented. See [current tlaw behavior](current-behavior.md) for
+executable facts; this document also contains future direction.
 
 The implemented surface is pinned by executable tests and summarized in
 [current tlaw behavior](current-behavior.md).
@@ -301,25 +301,14 @@ mixed metadata is rejected rather than ignored. Proven base/domain mismatches
 are refused, alias bounds are expanded in `--explain`, and `tlaw check` can
 discover law files under a folder.
 
-The remaining interface is not settled for:
-
-- mutation of more than one implementation module or non-Python boundaries;
-- external effects and mutable state not represented by explicit paths;
-- domain predicates beyond numeric ranges, finite choices, lists, records, and
-  declared dependencies;
-- relations reaching across scopes, since a record's `depends` names sibling
-  fields and a law's `depends` names law parameters, and neither crosses;
-- domains written directly inside `dict[...]`, `tuple[...]`, or other
-  unsupported annotation positions, which `record` replaces rather than
-  extends;
-- observing that a collaborator was *not* called. This is a decided non-goal:
-  tlaw sequences the calls a law makes and does not spy. Effect-absence is
-  stated by injecting a double, whose signal must be a `BaseException`
-  subclass when the code under law catches `Exception` broadly;
-- configurable NaN equality;
-- opt-in third-party pytest plugins;
-- existing pipelines whose steps are not explicitly composed in tlaw;
-- project-wide impact analysis and contract conflicts.
+The remaining interface is not settled, and this page deliberately does not
+keep its own list of those items: the canonical list of unimplemented surface
+and decided non-goals is [not implemented in current tlaw
+behavior](current-behavior.md#not-implemented). For this direction document
+the consequence is that its future-facing statements are proposals, not
+syntax: when one of those items is implemented, the executable statement in
+[current behavior](current-behavior.md) becomes the truth and this page only
+records why it was built.
 
 Those cases should be designed from real code one at a time. They must not add
 ceremony to the beginner form when their complexity can remain behind an

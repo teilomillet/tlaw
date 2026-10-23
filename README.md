@@ -9,7 +9,12 @@ For the exact implemented surface and its limits, see
 [current tlaw behavior](https://github.com/teilomillet/tlaw/blob/main/docs/current-behavior.md). Design documents are kept
 separate because they may describe syntax that does not exist yet.
 
-## Install
+## Start here
+
+Requirements: Python 3.12 or newer, and pytest 8.4.2 or newer — tlaw runs the
+laws through pytest in the project's own environment. The runtime dependencies
+are Hypothesis and pytest; their exact floors are the ones declared in
+[`pyproject.toml`](https://github.com/teilomillet/tlaw/blob/main/pyproject.toml).
 
 ```console
 uv add --dev tlaw        # inside a project (recommended)
@@ -22,9 +27,54 @@ environment (`uv run tlaw check laws.py`). The standalone tool works for
 self-contained law folders whose implementation needs only the standard
 library.
 
-For a short complete workflow, follow the [check, retain, replay, and mutation
-example](examples/workflow/README.md). It includes a deliberate bug and explains
-the exit codes when replay reproduces a failure and when the code is repaired.
+Pin the version (`tlaw>=0.0.11`) if your project also pins `pytest<9`: older
+tlaw releases predate the current dependency floor, so an unconstrained
+dependency may resolve to an old release instead of the newest one.
+
+Given an ordinary function:
+
+```python
+# implementation.py
+def reverse(values: list[int]) -> list[int]:
+    return list(reversed(values))
+```
+
+Its law can be one function:
+
+```python
+# laws.py
+import tlaw
+
+from implementation import reverse
+
+
+@tlaw.law
+def reversing_twice_returns_the_original(values: list[int]) -> bool:
+    return reverse(reverse(values)) == values
+```
+
+Run it, then look at what tlaw inferred rather than taking generation on trust:
+
+```console
+tlaw check laws.py
+tlaw check laws.py --explain
+```
+
+The function name explains the behavior, its annotation supplies generated
+inputs, and the returned boolean is what must always hold. Writing this first
+law requires no Hypothesis syntax.
+
+Bare laws run up to 100 deterministic examples without a local example
+database. tlaw includes the minimized failing input in its output. It also
+copies generated inputs and rejects a passing bare law when it detects that the
+law mutated one; stateful behavior should use the explicit path interface
+below.
+
+For a longer first exercise, open the
+[name cleaner tutorial](https://github.com/teilomillet/tlaw/blob/main/examples/name_cleaner/README.md). For a complete
+command sequence — check, retain, replay, repair, and mutation, including a
+deliberate bug and the exit codes — follow the
+[workflow example](https://github.com/teilomillet/tlaw/blob/main/examples/workflow/README.md).
 
 ## What works today
 
@@ -87,59 +137,14 @@ invocation gathers fresh baseline, canary and confirmation evidence. Reports
 separate selected, excluded and unrun mutants; completing a selection does
 not claim completion of the full generated campaign.
 
-Important pieces are still intentionally absent: domain predicates and nested
-domain positions beyond the implemented `number`, `integer`, `list_of`,
-`one_of`, `recursive`, `record`, `depends`, and supported `Annotated` forms;
-relations across a record's field scope and a law's parameter scope; observing
-that a collaborator was *not* called, which is a decided non-goal — tlaw sequences
-the calls a law makes and does not spy; opt-in third-party pytest plugins;
-and impact graphs.
-
-## Write a first law
-
-Given an ordinary function:
-
-```python
-# implementation.py
-def reverse(values: list[int]) -> list[int]:
-    return list(reversed(values))
-```
-
-Its law can be one function:
-
-```python
-# laws.py
-import tlaw
-
-from implementation import reverse
-
-
-@tlaw.law
-def reversing_twice_returns_the_original(values: list[int]) -> bool:
-    return reverse(reverse(values)) == values
-```
-
-Run it:
-
-```console
-tlaw check laws.py
-```
-
-To see what tlaw inferred rather than taking generation on trust:
-
-```console
-tlaw check laws.py --explain
-```
-
-The function name explains the behavior, its annotation supplies generated
-inputs, and the returned boolean is what must always hold. Writing this first
-law requires no Hypothesis syntax.
-
-Bare laws run up to 100 deterministic examples without a local example
-database. tlaw includes the minimized failing input in its output. It also
-copies generated inputs and rejects a passing bare law when it detects that the
-law mutated one; stateful behavior should use the explicit path interface
-below.
+The list above is the implemented surface, not a promise about what comes
+next. What is intentionally absent is maintained once, in
+[not implemented](https://github.com/teilomillet/tlaw/blob/main/docs/current-behavior.md#not-implemented): domain predicates,
+relations across scopes, multi-module and non-Python mutation, observation of
+calls that did *not* happen, third-party pytest plugins, project-wide impact
+graphs, and the rest. Read that list before inferring a capability from the
+vocabulary here; in particular, tlaw sequences the calls a law makes and does
+not spy on absence.
 
 ## The vocabulary is a ladder
 
@@ -173,10 +178,16 @@ What the annotation generates:
 When behavior mutates state, describe [two paths from fresh starts](#describe-stateful-paths)
 instead of a returned value.
 
-Getting evidence is a separate axis, ordered by how hard the laws are tried:
-`tlaw check` (do they hold?) → `tlaw mutate` (do they *constrain*?) →
-`tlaw diff` (did a commit change a law's *meaning*?) → `tlaw audit` (do they
-reject declared-wrong implementations?).
+Getting evidence is a separate axis. Each question is different, and none is
+implied by the others:
+
+- `tlaw check` — do the laws hold against the code now?
+- `tlaw mutate` and `tlaw audit` — do the laws actually *constrain* the
+  implementation? This is a question about the strength of the laws, not about
+  today's correctness.
+- `tlaw diff` — did a commit change what a law *means*? This is review
+  visibility only: it reads source, never executes either revision, and is
+  never itself executed evidence.
 
 ## Make law changes loud
 
@@ -252,7 +263,7 @@ an exhaustive check that passes every declared combination reports `exhausted`.
 A failure stops that law at its first counterexample, which can be retained and
 replayed with the same commands below. Ordinary checks continue to use Hypothesis;
 mutation remains a separate challenge to the laws. See
-[finite checking](docs/current-behavior.md#exhaustive-finite-checking) for limits.
+[finite checking](https://github.com/teilomillet/tlaw/blob/main/docs/current-behavior.md#exhaustive-finite-checking) for limits.
 
 ## Search and replay a counterexample
 
@@ -380,8 +391,11 @@ For a larger first exercise, open the self-contained
 [name cleaner tutorial](https://github.com/teilomillet/tlaw/blob/main/examples/name_cleaner/README.md). It explains every
 definition, includes implementation and laws together, and gives a deliberate
 break-and-fix exercise. The tiny [list example](https://github.com/teilomillet/tlaw/blob/main/examples/list_tools/laws.py)
-and the current [interface direction](https://github.com/teilomillet/tlaw/blob/main/docs/interface-direction.md) remain
-available as references.
+and the [interface direction document](https://github.com/teilomillet/tlaw/blob/main/docs/interface-direction.md) remain
+available as references. The latter is a July 2026 product-direction document
+whose implemented parts are marked on the page; its future sections are not
+implemented syntax, and [current behavior](https://github.com/teilomillet/tlaw/blob/main/docs/current-behavior.md) is the
+authoritative account of what runs today.
 
 Keep laws beside the code whose behavior they define. A feature folder should
 remain understandable on its own; tlaw does not require a distant contract
@@ -404,16 +418,19 @@ confirmed CrossHair contracts, tlaw's self-laws, `tlaw check` on the whole
 scheduled and path-triggered workflow runs the slower full mutation
 grade for the core value boundaries. The exact claim and its limits are in
 [core evidence](https://github.com/teilomillet/tlaw/blob/main/docs/core-evidence.md).
-CI pins uv and runs the gate on every push and pull request
-(`.github/workflows/ci.yml`), and the same file runs locally before each push
-once the hook is installed:
+
+`scripts/gate` is shared by exactly two callers: `.githooks/pre-push` runs it
+on this machine before each push, and `.github/workflows/ci.yml` runs the same
+script on every push and pull request. The command list exists once; there is
+no workflow-only copy, so a check that passes locally is the check CI runs.
+(The workflow pins the uv version it installs; the hook uses the local one.)
+Install the hook once:
 
 ```console
 git config core.hooksPath .githooks
 ```
 
-Local and remote checks share one script instead of maintaining two command
-lists. CI also pins uv, and the gate refuses a stale dependency lock.
+The gate refuses a stale dependency lock.
 
 The gate also builds the source distribution and wheel, installs the wheel with
 locked runtime dependencies in a fresh environment, and runs the worked example
@@ -423,15 +440,27 @@ mutation kills confirmed by exact replay. Run just this check with
 `uv run python scripts/check_installed.py`. The release workflow uses the same
 check on the exact wheel it uploads.
 
-Tlaw also checks itself through the [self-law suite](selflaws/README.md).
-Four law files exercise replay encoding, comparison, domains, and paths against
-the real core and ten declared known-wrong implementations. Independent pytest
-checks require the intended rejections, detect an always-accepting law checker,
-and exercise exact counterexample replay. The gate runs this evidence alongside
-the existing mutation challenges; it is bounded test evidence, not formal proof.
-`git push --no-verify` skips the local run in an emergency; CI remains the
-enforcement of record. Publishing stays separate: the release workflow is
-gatekept by a version change in `pyproject.toml`.
+Tlaw also checks itself through two similarly named, deliberately different
+dogfooding suites:
+
+- `self_laws/` is the **fast boundary suite**. Four law files state the domain,
+  comparison, exclusion, and typed-replay boundaries through tlaw's public
+  interface; the push gate runs them with `tlaw check self_laws/` on every
+  commit, independently of the ordinary pytest suite. `scripts/core-evidence`
+  mutates the matching core modules while leaving these laws unchanged.
+- `selflaws/` is the **challenge suite**. Four law files run against the real
+  core and ten declared known-wrong implementations, driven by
+  `tlaw check selflaws/` and `tlaw audit selflaws/audit.py`. Independent pytest
+  checks require each intended rejection, detect an always-accepting law
+  checker, and exercise exact counterexample replay. See
+  [Laws for tlaw itself](https://github.com/teilomillet/tlaw/blob/main/selflaws/README.md).
+
+The gate runs both suites alongside the mutation challenges; this is bounded
+test evidence, not formal proof. The full composition and its limits are in
+[core evidence](https://github.com/teilomillet/tlaw/blob/main/docs/core-evidence.md). `git push --no-verify` skips the local
+run in an emergency; CI remains the enforcement of record. Publishing stays
+separate: the release workflow is gatekept by a version change in
+`pyproject.toml`.
 
 If a commit intentionally changes behavior, its executable law and
 implementation may change together. The law diff states what changed; CI
@@ -467,22 +496,45 @@ reaches PyPI.
 
 During development, add one small file under `changes/` for each user-visible
 change instead of editing `CHANGELOG.md`. The complete rules are in
-[CONTRIBUTING.md](CONTRIBUTING.md). At release, use uv to keep the version and
+[CONTRIBUTING.md](https://github.com/teilomillet/tlaw/blob/main/CONTRIBUTING.md). At release, use uv to keep the version and
 lockfile together, then compile and review those fragments:
 
 ```console
-uv version 0.0.3
-uv run towncrier build --yes --version 0.0.3
+uv version 0.0.11
+uv run towncrier build --yes --version 0.0.11
 git diff -- CHANGELOG.md changes pyproject.toml uv.lock
 git add pyproject.toml uv.lock CHANGELOG.md changes/
-git commit -m "chore(release): publish tlaw 0.0.3"
+git commit -m "chore(release): publish tlaw 0.0.11"
 git push origin main
 ```
 
 The upload uses PyPI trusted publishing, not a long-lived API token. Its
 one-time configuration must name GitHub owner `teilomillet`, repository
 `tlaw`, workflow `release.yml`, and environment `pypi`. The workflow is kept
-in [`.github/workflows/release.yml`](.github/workflows/release.yml).
+in [`.github/workflows/release.yml`](https://github.com/teilomillet/tlaw/blob/main/.github/workflows/release.yml).
+
+A release is traceable after the fact. Once the upload succeeds, the same
+workflow creates the tag `v<version>` on the release commit and a GitHub
+Release titled `tlaw <version>`, with release notes taken from that version's
+`CHANGELOG.md` section and the verified distribution files attached. Before
+`uv publish`, it generates PEP 740 provenance attestations for the exact files
+it uploads, so PyPI can verify which workflow and commit produced the
+distribution.
+
+A release can be preflighted without publishing, and a failed release can be
+recovered without burning a new version. Run the workflow manually with the
+`publish` input left at its default `false` to execute the full gate, build,
+and installed-wheel checks only:
+
+```console
+gh workflow run release.yml
+```
+
+Add `-f publish=true` to publish the current `pyproject.toml` version.
+Publishing and release creation are idempotent: an already-published version
+is skipped, the upload uses `--check-url`, and an existing GitHub Release is
+updated with `--clobber` instead of failing. Rerun the failed workflow
+instead of bumping the version to recover.
 
 ## Describe stateful paths
 
@@ -607,23 +659,62 @@ declared known-wrong implementation is rejected by a law.
 
 The audit's known-wrong set is chosen by its author. `tlaw mutate` generates
 challenges nobody selected — small single-site changes to one implementation
-module — and runs the unchanged laws against every one:
+module — and runs the unchanged laws against every one. Here is the committed
+[rescale example](https://github.com/teilomillet/tlaw/blob/main/examples/rescale/README.md) run in this repository on
+2026-10-23 with tlaw 0.0.10. The output is unmodified except that the absolute
+checkout prefix on the two path lines is elided as `...` and that timings vary
+between runs:
 
 ```console
-tlaw mutate laws.py implementation.py
+$ uv run tlaw mutate examples/rescale/laws.py examples/rescale/implementation.py
 ```
 
 ```text
+tlaw generated-mutation evidence
+Laws: .../examples/rescale/laws.py
+Implementation: .../examples/rescale/implementation.py
+Boundary: directory (implementation)
+Checking: sampled; total input space not enumerated
+Baseline: PASS (0.26s); per-mutant budget 5.0s (10x baseline, floor 5s)
+Baseline law obligations: 1 of 1 completed
+  sampled: laws.py::kahan_matches_naive_to_relative_precision; total input space not enumerated
+Mutation scope: generated 4; selected 4; excluded 0
+Campaign plan: generated mutations 4; selected 4; excluded 0; compiling mutations 4; law cases 1
+Planned isolated runs: 6..14 for the full campaign, including baseline, canary and confirmations
+Planned law input counts: unknown (sampled checks)
+Isolated runs started: 9; run budget: unlimited
 Canary: KILLED (laws observe the mutated module)
+  sampled: laws.py::kahan_matches_naive_to_relative_precision; total input space not enumerated
 Mutations:
-- 3e67f984ab5f SURVIVED double_all: replace value + value with value - value
-- f3bb33e45d2b KILLED sign: replace value < 0 with value <= 0 (law: laws.py::sign_matches_a_reference)
+- e77faa4243e4 SURVIVED total_kahan: replace value - compensation with value + compensation (all laws passed)
+  sampled: laws.py::kahan_matches_naive_to_relative_precision; total input space not enumerated
+- 5b18a28a84d5 KILLED total_kahan: replace total + adjusted with total - adjusted (law failure or implementation exception; exact replay confirmed; law: laws.py::kahan_matches_naive_to_relative_precision)
+  sampled: laws.py::kahan_matches_naive_to_relative_precision; total input space not enumerated
+- 77e15088d04d KILLED total_kahan: replace stepped - total - adjusted with stepped - total + adjusted (law failure or implementation exception; exact replay confirmed; law: laws.py::kahan_matches_naive_to_relative_precision)
+  sampled: laws.py::kahan_matches_naive_to_relative_precision; total input space not enumerated
+- 86ec9ad9200f KILLED total_kahan: replace stepped - total with stepped + total (law failure or implementation exception; exact replay confirmed; law: laws.py::kahan_matches_naive_to_relative_precision)
+  sampled: laws.py::kahan_matches_naive_to_relative_precision; total input space not enumerated
 Killed 3 of 4 runnable generated mutations.
 Survivors: 1
+Mutations not run: 0
+Mutations excluded from selection: 0
+Unresolved equivalent candidates: 0
+Invalid or infrastructure errors: 0
 ```
 
+That run exited `1`: an unexplained survivor is a prompt for investigation,
+not proof that the laws are wrong. Exit `2` would mean the evidence itself was
+invalid or incomplete. The single survivor is the interesting result: the
+`kahan_matches_naive_to_relative_precision` law only states relative agreement
+to `1e-9`, and flipping the sign of the compensation term changes the result
+below that floor. The committed
+[equivalence ledger](https://github.com/teilomillet/tlaw/blob/main/examples/rescale/equivalents.toml) records it as an
+equivalent *within the declared contract* rather than a missed defect, with
+the reason a human can review.
+
 The rules are recorded in [generated mutation evidence](https://github.com/teilomillet/tlaw/blob/main/docs/mutation-evidence.md)
-and encoded in `tlaw/mutation.py`: the baseline must pass with complete law
+and encoded in `tlaw/mutation.py` (campaign and evidence rules) and
+`tlaw/mutation_ast.py` (generation): the baseline must pass with complete law
 obligations first. Ordinary mutant runs must execute the same law cases, and
 kills must reproduce retained typed inputs and exception fingerprints against
 the same mutant in a fresh copy. Calibrated timeout kills must time out again
@@ -693,8 +784,10 @@ print(mutations)
 `report.enforce()` raises `tlaw.EnforcementError` when evidence is invalid or
 insufficient. Its `error.result` retains the structured audit evidence.
 
-Existing TOML audit manifests remain supported. Python law and audit files are
-executable code, so run only files you trust.
+Existing TOML audit manifests remain supported but are deprecated: loading one
+emits a `DeprecationWarning` and the CLI prints a notice. Prefer a Python
+`Lawbook` for new audit declarations. Python law and audit files are executable
+code, so run only files you trust.
 
 ## Develop tlaw
 
@@ -706,8 +799,20 @@ uv run ruff check .
 uv run ruff format --check .
 ./scripts/crosshair
 uv run tlaw check self_laws/
+uv run tlaw check selflaws/
+uv run tlaw audit selflaws/audit.py
 ./scripts/core-evidence
 ```
+
+Two similarly named suites cover different things, and neither replaces the
+other. `self_laws/` is the fast boundary suite the push gate runs on every
+commit; it states the domain, comparison, exclusion, and typed-replay
+boundaries through tlaw's public interface. `selflaws/` is the challenge
+suite: the same public surface run against ten declared known-wrong
+implementations, with independent pytest checks that require each intended
+rejection. The distinction is explained in the
+[Git and CI section](#git-and-ci-are-the-acceptance-mechanism) and in
+[core evidence](https://github.com/teilomillet/tlaw/blob/main/docs/core-evidence.md).
 
 The precise implemented surface is recorded in
 [current tlaw behavior](https://github.com/teilomillet/tlaw/blob/main/docs/current-behavior.md), and the independent challenge
@@ -715,4 +820,6 @@ rules are recorded in
 [generated mutation evidence](https://github.com/teilomillet/tlaw/blob/main/docs/mutation-evidence.md).
 The repository-specific composition of symbolic, property, and mutation
 evidence is recorded in
-[core evidence](https://github.com/teilomillet/tlaw/blob/main/docs/core-evidence.md).
+[core evidence](https://github.com/teilomillet/tlaw/blob/main/docs/core-evidence.md). The documentation index, including
+which page states implemented behavior versus design or direction, is
+[docs/README.md](https://github.com/teilomillet/tlaw/blob/main/docs/README.md).

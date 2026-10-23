@@ -4,6 +4,22 @@ Status: implemented and verified on 2026-10-23. This document describes what
 the current repository code does today. Design documents may describe future
 directions; this file does not.
 
+Maintenance: this file is written by hand and has no generator, so nothing
+updates it automatically when behavior changes. Update it in the same commit
+as the behavior change, and treat the following executable checks as the
+primary pin for its claims: `tests/test_public_api.py` (exported names),
+`tests/test_cli.py` (CLI commands and exit codes), `tests/test_exhaustive*.py`
+and `tests/test_recursive_exhaustive.py` (finite checking),
+`tests/test_obligations.py` (obligation accounting),
+`tests/test_mutation_engine.py` and `tests/test_mutation_properties.py`
+(mutation evidence), and `./scripts/gate` as the composition. A claim that
+none of these exercises is prose only: verify it against the code before
+repeating it.
+
+This document is also the single canonical list of what is *not* implemented
+(see [Not implemented](#not-implemented)); other pages link here instead of
+restating it.
+
 ## The shortest usable path
 
 ```python
@@ -44,9 +60,14 @@ answer.
 
 Before an inferred law runs, tlaw deep-copies every generated argument. A law
 that passes after persistently changing one of those arguments is rejected. If
-an argument cannot be copied or safely compared with its copy, tlaw errors
-instead of claiming purity. This guard does not detect a mutation that is
-reversed before return, external I/O, global state, or another hidden effect.
+an argument cannot be copied or safely compared with its copy, the run is
+invalid evidence (exit `2`) instead of a law refutation; a genuine refutation
+in the same file still decides the result. Known limitation: an unchanged value
+whose deep copy nevertheless compares unequal (for example some
+identity-equality objects) can still be reported as a refutation, because the
+guard cannot distinguish that case from a real mutation. This guard does not
+detect a mutation that is reversed before return, external I/O, global state, or
+another hidden effect.
 
 ## Static law changes
 
@@ -376,7 +397,9 @@ elsewhere.
 ## Visible input domains
 
 Ordinary annotations such as `int`, `str`, and `list[int]` use Hypothesis's
-type inference. Six concrete tlaw domain builders are also implemented:
+type inference. Seven concrete tlaw domain builders are also implemented —
+`number`, `integer`, `one_of`, `list_of`, `recursive`, `record`, and
+`depends`:
 
 ```python
 Reward = tlaw.number(0, 1)
@@ -811,7 +834,7 @@ observe that copy.
 
 | Command | Implemented behavior | Exit behavior |
 | --- | --- | --- |
-| `tlaw check laws.py` | Runs one Python law file with third-party pytest plugin autoload disabled and the project's `addopts` not applied, and constructs replay evidence for a failure. | `0` for pass, `1` for a law failure whether or not its counterexample could be retained, `2` when the harness could not produce a verdict at all. |
+| `tlaw check laws.py` | Runs one Python law file with third-party pytest plugin autoload disabled and the project's `addopts` not applied, and constructs replay evidence for a failure. The child runs in a temporary Hypothesis storage directory and writes no bytecode, so the checked tree is not modified. | `0` for pass, `1` for a law failure whether or not its counterexample could be retained, `2` when the harness could not produce a verdict at all. |
 | `tlaw check feature/` | Discovers every `laws.py` and `*_laws.py` under a folder and checks each. Per-file evidence flags (`--search`, `--json`, `--seed`, `--replay`) are refused in folder mode. | Worst per-file code: `0` only when every file passes, else `1` or `2`. |
 | `tlaw check laws.py --explain` | Adds the inferred-generation explanation before the pytest result. Aliased domains are expanded. | Same as `check`. |
 | `tlaw check laws.py --search [--seed N]` | Uses a fresh visible seed, or reuses `N`, instead of deterministic inferred generation. | Same as `check`. |
@@ -819,7 +842,7 @@ observe that copy.
 | `tlaw check laws.py --json report.json` | Writes the stable `tlaw.check/v1` report; it composes with `--search` or `--exhaustive`. | Same as `check`, except `2` when a counterexample cannot be retained, because the requested evidence cannot be produced. |
 | `tlaw check --replay report.json` | Runs exactly the retained law inputs and no neighboring tests. | `0` when every failure is reproduced exactly, `1` when behavior differs, `2` for invalid evidence. |
 | `tlaw diff BASE..HEAD` | Parses tlaw laws from two Git revisions without executing them and reports the law-space difference. | `0` for no law changes, `1` when law changes are present, `2` for an invalid range or unreadable source. |
-| `tlaw audit audit.py` | Runs one declared baseline and declared known-wrong implementations from a Python `Lawbook`. Legacy TOML manifests also work. | `0` when all declared wrong implementations are rejected, `1` when one survives, `2` for invalid evidence. |
+| `tlaw audit audit.py` | Runs one declared baseline and declared known-wrong implementations from a Python `Lawbook`. Legacy TOML manifests remain supported but are deprecated: loading one emits a `DeprecationWarning` and the CLI prints a notice. | `0` when all declared wrong implementations are rejected, `1` when one survives, `2` for invalid evidence. |
 | `tlaw audit audit.py --json report.json` | Also writes the stable `tlaw.audit/v1` JSON report. | Same as `audit`, except `2` when the requested report cannot be written. |
 | `tlaw mutate laws.py implementation.py` | Generates deterministic, single-site mutations of one implementation module and runs the unchanged laws in isolated copies of the selected directory or package boundary. | `0` when every generated challenge is killed or explained, `1` when a survivor remains, `2` for no generated challenges, an invalid baseline, or harness errors. |
 | `tlaw mutate ... --json report.json` | Also writes the stable `tlaw.mutation/v1` JSON report. | Same as `mutate`, except `2` when the requested report cannot be written. |
@@ -1026,6 +1049,11 @@ produce evidence.
 
 ## Not implemented
 
+This is the single canonical list of tlaw's non-goals and unimplemented
+surface. [Interface direction](interface-direction.md) and the
+[README](../README.md) link here instead of keeping parallel lists that could
+diverge. Nothing below is promised by the current version.
+
 - arbitrary or composable domain predicates beyond the implemented numeric,
   finite-choice, list, recursive, record, and dependent domains;
 - a relation reaching *across* scopes — a record field cannot depend on a law
@@ -1042,15 +1070,19 @@ produce evidence.
   correct `except Exception` in the target absorbing a double's
   `AssertionError`, which turned a real violation into an unrelated failure
   (probes/anef);
+- external effects and mutable state that a law does not represent as explicit
+  paths: paths model the calls a law makes, not I/O, globals, or time;
 - configurable NaN equality;
 - opt-in loading of third-party pytest plugins;
 - automatic pipeline tracing, dependency maps, contract-conflict planning, or
   project-wide graphs;
+- existing pipelines whose steps are not composed explicitly in tlaw;
 - a map of code with no laws, so `check` cannot report project-wide unknown
   behavior; and
-- mutating two packages at once (one module at a time is supported, across
-  flat, regular-package, and namespace-package boundaries; compiled modules
-  are refused because a source-level tool cannot mutate them).
+- mutation across more than one implementation module at a time or across
+  non-Python boundaries (one module at a time is supported, across flat,
+  regular-package, and namespace-package boundaries; compiled modules are
+  refused because a source-level tool cannot mutate them).
 
 Neither writing nor enforcing a law requires an LLM or network access. Python
 law files, Python audit files, and the application code they import are

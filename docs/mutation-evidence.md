@@ -1,8 +1,9 @@
 # Generated mutation evidence
 
 Status: required before derived project-wide confidence views. The first
-mutation boundary is implemented as `tlaw mutate laws.py implementation.py`
-in `tlaw/mutation.py`; the rules below are encoded there and pinned by
+mutation boundary is implemented as `tlaw mutate laws.py implementation.py`.
+The campaign rules live in `tlaw/mutation.py` and the AST generation half lives
+in `tlaw/mutation_ast.py`; the rules below are encoded there and pinned by
 `tests/test_mutation_properties.py` and `tests/test_mutation_engine.py`.
 
 ## Why it is load-bearing

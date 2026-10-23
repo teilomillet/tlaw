@@ -1,15 +1,26 @@
 # Acceptance and evidence
 
-Status: working design detail. Date: 2026-07-23.
+Status: working design detail. The implemented inventory below was re-checked
+against the repository on 2026-10-23; sections that state a design target say
+so explicitly.
 
 Implemented now: deterministic inferred generation, minimized failures in check
-output, third-party pytest plugin isolation, `tlaw check --explain`, visible
-`number`/`integer`/`one_of`/`list_of`/`depends` domains, retained `same`
-comparisons with absolute and relative tolerance, declared audits, generated
-mutation evidence for flat modules, regular packages, and namespace packages,
-and one shared local and CI gate. Static `tlaw diff`, randomized `--search`, stable
-`tlaw.check/v1` reports, repeatable `--seed`, and exact `--replay` are also
-implemented and probed.
+output, third-party pytest plugin isolation, `tlaw check --explain`; visible
+`number`/`integer`/`one_of`/`list_of`/`recursive`/`record`/`depends` domains,
+including dictionary-form records and finite recursive values; retained `same`
+comparisons with absolute and relative tolerance; `raises`, `returns`, and
+`excludes` claim objects, with `.and_then(...)` available on the `same`,
+`raises`, and `returns` claims (not on `excludes`); declared audits;
+generated mutation evidence for flat modules, regular packages, and namespace
+packages, with opt-in exhaustive mutation, campaign planning (`--plan`,
+`--max-runs`), and exact mutant-ID reruns (`--mutant`); opt-in exhaustive
+checking of supported finite domains with per-law obligation accounting; one
+shared local and CI gate; and a version-triggered release pipeline that gates,
+builds, verifies the exact wheel, publishes to PyPI with trusted publishing and
+PEP 740 provenance attestations, then tags the release and creates a GitHub
+Release. Static
+`tlaw diff`, randomized `--search`, stable `tlaw.check/v1` reports, repeatable
+`--seed`, and exact `--replay` are also implemented and probed.
 
 Opt-in `--exhaustive` checking now enumerates supported small finite domains.
 Each law obligation distinguishes sampled, exhaustive, and replay evidence;

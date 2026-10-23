@@ -13,13 +13,22 @@ different conclusion.
    tlaw as its own assertion oracle. `scripts/crosshair` accepts only
    `Confirmed over all paths` for every retained contract; `Not confirmed`, a
    timeout, or a changed contract count fails the gate.
-3. `self_laws/` states the domain, comparison, exclusion, and typed-replay
-   boundaries through tlaw's public interface. These laws run in the fast push
-   gate, independently of the ordinary pytest suite.
-   Domain-generation laws retain an integer seed and use a bounded deterministic
-   draw schedule inside their bodies, so their counterexamples remain ordinary
-   replayable inputs. The separate `selflaws/` suite challenges the checker with
-   ten declared known-wrong implementations and independent regression tests.
+3. Two similarly named dogfooding suites cover different questions; neither
+   substitutes for the other.
+   - `self_laws/` is the **fast boundary suite**. Its law files state the
+     domain, comparison, exclusion, and typed-replay boundaries through tlaw's
+     public interface, and the push gate runs them with
+     `tlaw check self_laws/` on every commit, independently of the ordinary
+     pytest suite. Domain-generation laws retain an integer seed and use a
+     bounded deterministic draw schedule inside their bodies, so their
+     counterexamples remain ordinary replayable inputs.
+   - `selflaws/` is the **challenge suite**. Its four law files run against
+     the real core and ten declared known-wrong implementations, driven by
+     `tlaw check selflaws/` and `tlaw audit selflaws/audit.py`; independent
+     pytest checks (`tests/test_self_laws.py`) require each intended rejection,
+     detect an always-accepting law checker, and exercise exact counterexample
+     replay. The committed production code and laws are not changed by those
+     tests.
 4. `scripts/core-evidence` mutates the core implementation files while leaving
    their self-laws unchanged. It succeeds only when every generated runnable
    mutation is killed or has an explicit reviewed equivalent declaration. The
