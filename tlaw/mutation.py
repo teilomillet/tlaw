@@ -16,14 +16,14 @@ controls the verdict. Generated mutations are challenges nobody selected,
 so a kill is evidence the laws constrain behavior rather than evidence the
 author chose beatable opponents.
 
-How: the three evidence rules this module encodes
--------------------------------------------------
+How: the evidence rules this module encodes
+------------------------------------------
 1. **Attribution by difference from baseline.** The baseline run must pass
-   cleanly before any mutant runs. After that, an ordinary pytest failure
-   under a mutant — a ``False`` comparison *or* an exception raised by the
-   mutated implementation — is a behavioral difference and counts as a
-   kill. ``error`` is reserved for outcomes the harness cannot attribute
-   to the mutation. A mutant that breaks collection could not be loaded at
+   with complete law obligations before any mutant runs. Ordinary runs must
+   retain the same law inventory, including parametrized items. A retained
+   law failure under a mutant is a candidate kill. ``error`` covers outcomes
+   without complete execution evidence, a replayable law failure, or another
+   attributable outcome. A mutant that breaks collection could not be loaded at
    all, so it is ``invalid``: never a kill, never a law success.
 
 2. **A calibrated timeout is a kill, and is counted apart.** An infinite
@@ -46,8 +46,10 @@ How: the three evidence rules this module encodes
    baseline immediately before its replay and recomputes the budget from
    that fresh measurement, so a machine that became contended after the
    run began cannot manufacture a kill out of two slow runs. Laws use
-   deterministic generation by default, so a genuine kill reproduces; one
-   that does not is recorded as an error rather than inflating strength.
+   deterministic generation by default. Observed kills replay their retained
+   typed inputs and exception fingerprints against the same frozen mutant;
+   timeout kills must exceed the freshly calibrated budget. Unconfirmed
+   differences are errors rather than evidence of strength.
    This is the only place tlaw ever downgrades a failure, and it
    downgrades toward claiming less.
 
@@ -89,9 +91,26 @@ import tomllib
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
-from .audit import TARGET_ENV, ManifestError, _failed_tests
+from .audit import TARGET_ENV, ManifestError
+from .finite import MAX_CASES_ENV
+from .obligations import (
+    OBLIGATIONS_ENV,
+    Obligation,
+    obligations_complete,
+    read_obligations,
+)
+from .replay import (
+    CAPTURE_ENV,
+    MODE_ENV,
+    REPLAY_ENV,
+    REPLAY_ROOT_ENV,
+    SEED_ENV,
+    build_check_report,
+    load_report,
+    read_capture,
+)
 
 
 class MutationOutcome(Enum):
@@ -536,6 +555,9 @@ class CanaryRun:
     duration_seconds: float
     note: str
     output: str = field(repr=False, default="")
+    obligations: tuple[Obligation, ...] = ()
+    evidence: dict[str, Any] = field(repr=False, default_factory=dict)
+    evidence_error: str | None = None
 
     @property
     def wired(self) -> bool | None:
@@ -544,6 +566,8 @@ class CanaryRun:
             # observed a behavioral difference, which is all the canary
             # needs to prove.
             return True
+        if self.evidence_error or not obligations_complete(self.obligations):
+            return None
         if self.exit_code == 1:
             return True
         if self.exit_code == 0:
@@ -554,7 +578,10 @@ class CanaryRun:
 def classify_mutant_exit(
     exit_code: int, *, timed_out: bool
 ) -> tuple[MutationOutcome, KillKind | None, str]:
-    """Map one mutant run to an outcome, a kill kind, and a note.
+    """Map a process exit to a provisional outcome, kill kind, and note.
+
+    The runner also requires complete law evidence and confirms candidate
+    kills before counting them.
 
     This function is only called when the baseline already passed cleanly
     on the same laws with the same deterministic examples, so:
@@ -634,10 +661,18 @@ class BaselineRun:
     timed_out: bool
     output: str = field(repr=False, default="")
     command: tuple[str, ...] = ()
+    obligations: tuple[Obligation, ...] = ()
+    evidence_error: str | None = None
 
     @property
     def valid(self) -> bool:
-        return self.exit_code == 0 and not self.timed_out
+        return (
+            self.exit_code == 0
+            and not self.timed_out
+            and self.evidence_error is None
+            and obligations_complete(self.obligations)
+            and all(law.status == "passed" for law in self.obligations)
+        )
 
 
 @dataclass(frozen=True)
@@ -664,6 +699,12 @@ class MutantRun:
     failed_tests: tuple[str, ...] = ()
     output: str = field(repr=False, default="")
     kill_kind: KillKind | None = None
+    evidence: dict[str, Any] = field(repr=False, default_factory=dict)
+    replay_evidence: dict[str, Any] = field(repr=False, default_factory=dict)
+    replay_method: Literal["exact", "timeout"] | None = None
+    replay_exit_code: int | None = None
+    replay_timed_out: bool | None = None
+    replay_duration_seconds: float | None = None
 
 
 def apply_equivalence_ledger(
@@ -818,6 +859,8 @@ class MutationResult:
                 "duration_seconds": self.baseline.duration_seconds,
                 "timed_out": self.baseline.timed_out,
                 "valid": self.baseline_valid,
+                "obligations": [law.to_dict() for law in self.baseline.obligations],
+                "evidence_error": self.baseline.evidence_error,
             },
             "budget": {
                 "seconds": self.budget_seconds,
@@ -833,6 +876,9 @@ class MutationResult:
                     "duration_seconds": self.canary.duration_seconds,
                     "wired": self.canary.wired,
                     "note": self.canary.note,
+                    "obligations": [law.to_dict() for law in self.canary.obligations],
+                    "evidence": self.canary.evidence,
+                    "evidence_error": self.canary.evidence_error,
                 }
             ),
             "mutations": [
@@ -849,6 +895,12 @@ class MutationResult:
                     "duration_seconds": run.duration_seconds,
                     "failed_tests": list(run.failed_tests),
                     "diff": run.mutation.diff,
+                    "evidence": run.evidence,
+                    "replay_evidence": run.replay_evidence,
+                    "replay_method": run.replay_method,
+                    "replay_exit_code": run.replay_exit_code,
+                    "replay_timed_out": run.replay_timed_out,
+                    "replay_duration_seconds": run.replay_duration_seconds,
                 }
                 for run in self.runs
             ],
@@ -888,9 +940,21 @@ class MutationResult:
                 f" floor {self.timeout_floor_seconds:g}s)"
             ),
         ]
+        completed = sum(law.completed for law in self.baseline.obligations)
+        lines.append(
+            f"Baseline law obligations: {completed} of "
+            f"{len(self.baseline.obligations)} completed"
+        )
+        if self.baseline.evidence_error:
+            lines.append(f"Baseline evidence: {self.baseline.evidence_error}")
         if self.canary is not None:
             if self.canary.wired is True:
-                lines.append("Canary: KILLED (laws observe the mutated module)")
+                detail = (
+                    self.canary.note
+                    if self.canary.timed_out
+                    else "laws observe the mutated module"
+                )
+                lines.append(f"Canary: KILLED ({detail})")
             elif self.canary.wired is False:
                 lines.append(
                     f"Canary: SURVIVED — INVALID EVIDENCE ({self.canary.note})"
@@ -908,12 +972,14 @@ class MutationResult:
         if not self.runs:
             lines.append("- NONE — INVALID EVIDENCE (no supported mutation sites)")
         for run in self.runs:
-            detail = f" ({run.note})" if run.note else ""
-            # Attribution is shown only for a confirmed observed kill. A
-            # downgraded run keeps its explanation instead, so no line
-            # ever reads as "this law rejected it" unless a law did.
-            if run.kill_kind is KillKind.OBSERVED and run.failed_tests:
-                detail = f" (law: {', '.join(run.failed_tests)})"
+            details = [run.note] if run.note else []
+            if (
+                run.outcome is MutationOutcome.KILLED
+                and run.kill_kind is KillKind.OBSERVED
+                and run.failed_tests
+            ):
+                details.append(f"law: {', '.join(run.failed_tests)}")
+            detail = f" ({'; '.join(details)})" if details else ""
             lines.append(
                 f"- {run.mutation.mutation_id} {labels[run.outcome]}"
                 f" {run.mutation.description}{detail}"
@@ -946,6 +1012,9 @@ class _PytestRun:
     duration_seconds: float
     output: str
     command: tuple[str, ...]
+    obligations: tuple[Obligation, ...] = ()
+    evidence: dict[str, Any] = field(default_factory=dict)
+    evidence_error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1142,6 +1211,7 @@ def _run_pytest_in_copy(
     *,
     mutated_source: str | None,
     timeout_seconds: float,
+    replay_evidence: dict[str, Any] | None = None,
 ) -> _PytestRun:
     """Run the laws once against a fresh copy of the boundary.
 
@@ -1159,6 +1229,8 @@ def _run_pytest_in_copy(
         "-q",
         "-p",
         "no:cacheprovider",
+        "-p",
+        "tlaw.pytest_plugin",
         # Same reason as ``tlaw check``: third-party plugin autoload is off,
         # so an inherited ``addopts`` naming an absent plugin would make every
         # mutant fail to start and be scored as a meaningless kill.
@@ -1169,6 +1241,17 @@ def _run_pytest_in_copy(
     environment = os.environ.copy()
     environment.pop(TARGET_ENV, None)
     environment.pop("PYTEST_ADDOPTS", None)
+    for variable in (
+        CAPTURE_ENV,
+        OBLIGATIONS_ENV,
+        MODE_ENV,
+        SEED_ENV,
+        REPLAY_ENV,
+        REPLAY_ROOT_ENV,
+        MAX_CASES_ENV,
+        "TLAW_EXPLAIN",
+    ):
+        environment.pop(variable, None)
     # Same isolation discipline as `tlaw check`: no third-party pytest
     # plugins, hashing fixed, no bytecode cache pollution.
     environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
@@ -1206,6 +1289,8 @@ def _run_pytest_in_copy(
                 "-q",
                 "-p",
                 "no:cacheprovider",
+                "-p",
+                "tlaw.pytest_plugin",
                 "-o",
                 "addopts=",
                 "--import-mode=importlib",
@@ -1219,6 +1304,26 @@ def _run_pytest_in_copy(
             environment["PYTHONPATH"] = os.pathsep.join(import_paths)
         else:
             working_directory = destination
+            law_file = destination / boundary.laws_name
+
+        law_file = law_file.resolve()
+        receipt = Path(workspace) / "obligations.json"
+        capture = Path(workspace) / "failures.json"
+        environment[OBLIGATIONS_ENV] = str(receipt)
+        if replay_evidence is None:
+            environment[CAPTURE_ENV] = str(capture)
+            environment[MODE_ENV] = "default"
+        else:
+            report_path = Path(workspace) / "replay.json"
+            report_path.write_text(json.dumps(replay_evidence), encoding="utf-8")
+            try:
+                load_report(report_path)
+            except ManifestError as error:
+                return _PytestRun(
+                    4, False, 0.0, str(error), command, evidence_error=str(error)
+                )
+            environment[REPLAY_ENV] = str(report_path)
+            environment[REPLAY_ROOT_ENV] = str(law_file.parent)
 
         started = time.monotonic()
         try:
@@ -1231,17 +1336,10 @@ def _run_pytest_in_copy(
                 timeout=timeout_seconds,
                 check=False,
             )
-            duration = time.monotonic() - started
             output = completed.stdout + completed.stderr
-            return _PytestRun(
-                exit_code=completed.returncode,
-                timed_out=False,
-                duration_seconds=duration,
-                output=output,
-                command=command,
-            )
+            exit_code = completed.returncode
+            timed_out = False
         except subprocess.TimeoutExpired as error:
-            duration = time.monotonic() - started
             stdout = (
                 error.stdout.decode()
                 if isinstance(error.stdout, bytes)
@@ -1253,13 +1351,58 @@ def _run_pytest_in_copy(
                 else error.stderr
             )
             output = (stdout or "") + (stderr or "")
-            return _PytestRun(
-                exit_code=124,
-                timed_out=True,
-                duration_seconds=duration,
-                output=output,
-                command=command,
+            exit_code = 124
+            timed_out = True
+        duration = time.monotonic() - started
+        obligations: tuple[Obligation, ...] = ()
+        evidence: dict[str, Any] = {}
+        evidence_error = None
+        try:
+            collected = read_obligations(receipt)
+            evidence = build_check_report(
+                law_file,
+                working_directory=law_file.parent,
+                mode="replay" if replay_evidence is not None else "default",
+                seed=None,
+                pytest_exit_code=exit_code,
+                captured=read_capture(capture),
+                obligations=collected,
             )
+            # Copies have different absolute roots; law identities and item
+            # suffixes, including parametrization, remain the same evidence.
+            if any("::" not in entry["nodeid"] for entry in evidence["obligations"]):
+                raise ManifestError(
+                    "law execution evidence has an invalid pytest node ID"
+                )
+            obligations = tuple(
+                Obligation(
+                    **{
+                        **entry,
+                        "nodeid": (
+                            f"{boundary.laws_name}::{entry['nodeid'].split('::', 1)[1]}"
+                        ),
+                    }
+                )
+                for entry in evidence["obligations"]
+            )
+            if len({law.nodeid for law in obligations}) != len(obligations):
+                raise ManifestError(
+                    "law execution evidence has duplicate pytest node IDs"
+                )
+            evidence["obligations"] = [law.to_dict() for law in obligations]
+        except (ManifestError, KeyError, TypeError, ValueError, OSError) as error:
+            evidence_error = str(error)
+            output += f"\ntlaw mutation: {evidence_error}\n"
+        return _PytestRun(
+            exit_code,
+            timed_out,
+            duration,
+            output,
+            command,
+            obligations,
+            evidence,
+            evidence_error,
+        )
 
 
 def _unwired_note(boundary: Boundary) -> str:
@@ -1279,6 +1422,75 @@ def _unwired_note(boundary: Boundary) -> str:
     )
 
 
+def _inventory(obligations: tuple[Obligation, ...]) -> tuple[tuple[str, str], ...]:
+    return tuple(sorted((law.identity, law.nodeid) for law in obligations))
+
+
+def _evidence_problem(
+    run: _PytestRun,
+    *,
+    expected: tuple[Obligation, ...] | None = None,
+    require_retained: bool = True,
+) -> str | None:
+    """Admit ordinary outcomes only after their law execution is accounted for."""
+    if run.evidence_error:
+        return run.evidence_error
+    if not obligations_complete(run.obligations):
+        incomplete = ", ".join(
+            f"{law.nodeid}: {law.status}"
+            for law in run.obligations
+            if not law.completed
+        )
+        return f"incomplete law obligations: {incomplete or 'no laws collected'}"
+    if expected is not None and _inventory(run.obligations) != _inventory(expected):
+        return "law inventory differs from the baseline"
+    failures = run.evidence.get("failures", ())
+    failed = {law.identity for law in run.obligations if law.status == "failed"}
+    if run.exit_code == 0 and (failed or failures):
+        return "passing pytest run contains failed law evidence"
+    if run.exit_code == 1:
+        if not failed or {failure["identity"] for failure in failures} != failed:
+            return "pytest failed without matching retained law failures"
+        if require_retained and any(
+            failure.get("capture_error") for failure in failures
+        ):
+            return (
+                "law was refuted, but its counterexample cannot be retained for replay"
+            )
+    return None
+
+
+def _replay_problem(run: _PytestRun, evidence: dict[str, Any]) -> str | None:
+    if run.timed_out:
+        return "exact replay timed out"
+    if run.evidence_error:
+        return run.evidence_error
+    if run.exit_code != 0 or not obligations_complete(run.obligations):
+        return "retained failures did not reproduce with complete law execution"
+    expected: dict[str, int] = {}
+    for failure in evidence["failures"]:
+        identity = failure["identity"]
+        expected[identity] = expected.get(identity, 0) + 1
+    actual = {law.identity for law in run.obligations}
+    if actual != set(expected):
+        return (
+            f"attribution did not replay: retained failures name {', '.join(sorted(expected))};"
+            f" replay names {', '.join(sorted(actual)) or 'no law'}"
+        )
+    if len(run.obligations) != len(expected):
+        return "replay law inventory differs from retained failures"
+    for law in run.obligations:
+        count = expected.get(law.identity)
+        if (
+            law.status != "passed"
+            or law.method != "replay"
+            or law.cases_checked != count
+            or law.cases_total != count
+        ):
+            return "replay did not execute every retained input exactly once"
+    return None
+
+
 def _run_one_mutant(
     boundary: Boundary,
     mutation: Mutation,
@@ -1286,6 +1498,7 @@ def _run_one_mutant(
     budget_seconds: float,
     baseline_duration: float,
     timeout_multiplier: float,
+    expected: tuple[Obligation, ...],
 ) -> MutantRun:
     executed = _run_pytest_in_copy(
         boundary,
@@ -1302,24 +1515,16 @@ def _run_one_mutant(
             f"calibrated timeout after {budget_seconds:.1f}s"
             f" ({timeout_multiplier:g}x baseline {baseline_duration:.2f}s)"
         )
-    # Name the killing law by the run's one laws file. pytest reports it by
-    # the path it was addressed with — in a package run a long climb from a
-    # temp workspace, which is ugly and not portable to another machine.
-    #
-    # A timed-out run is scraped for nothing. Its output is whatever pytest
-    # had printed when the budget killed it mid-flight, so any FAILED lines
-    # in it are a truncated prefix of what would have failed, not the set of
-    # laws that rejected this mutant. Reading that prefix as attribution is
-    # exactly the overclaim ``kill_kind`` exists to prevent: the kill was
-    # earned by the timeout, and a timeout names nothing.
-    prefix = f"{boundary.laws_name}::"
+    elif executed.exit_code in (0, 1):
+        problem = _evidence_problem(executed, expected=expected)
+        if problem:
+            outcome, kill_kind, note = MutationOutcome.ERROR, None, problem
+    # A timeout's partial receipt is history, not law attribution. Errors
+    # also retain their diagnostic evidence without claiming a killing law.
     failed = (
-        ()
-        if executed.timed_out
-        else tuple(
-            prefix + node.split("::", 1)[1] if "::" in node else node
-            for node in _failed_tests(executed.output)
-        )
+        tuple(law.nodeid for law in executed.obligations if law.status == "failed")
+        if outcome is MutationOutcome.KILLED and kill_kind is KillKind.OBSERVED
+        else ()
     )
     return MutantRun(
         mutation=mutation,
@@ -1331,15 +1536,8 @@ def _run_one_mutant(
         failed_tests=failed,
         output=executed.output,
         kill_kind=kill_kind,
+        evidence=executed.evidence,
     )
-
-
-def _kind_name(kind: KillKind | None) -> str:
-    return "no kill" if kind is None else kind.value
-
-
-def _law_list(tests: tuple[str, ...]) -> str:
-    return ", ".join(tests) if tests else "no named law"
 
 
 def _kill_did_not_replay(run: MutantRun, note: str) -> MutantRun:
@@ -1353,6 +1551,8 @@ def _kill_did_not_replay(run: MutantRun, note: str) -> MutantRun:
     invariant true everywhere a report is consumed: a run naming laws is
     a confirmed observed kill.
     """
+    if run.failed_tests:
+        note += f"; first run named {', '.join(run.failed_tests)}"
     return replace(
         run,
         outcome=MutationOutcome.ERROR,
@@ -1372,28 +1572,14 @@ def _confirm_kill(
     timeout_multiplier: float,
     timeout_floor_seconds: float,
     baseline_timeout_seconds: float,
+    expected: tuple[Obligation, ...],
 ) -> MutantRun:
-    """Rerun one kill and accept it only if the same evidence returns.
+    """Confirm retained failures exactly, or repeat a freshly timed timeout.
 
-    Rule 3 says a kill that does not replay is an error. What counts as
-    *the same kill* is the whole content of this function:
-
-    - a timeout kill is re-calibrated before it is retried. Its budget
-      came from a baseline measured before the mutant loop began, which
-      on a long run can be hours old; if the machine has since become
-      contended, every remaining mutant looks slow and two slow runs
-      would confirm each other. So the baseline is measured again
-      immediately before the replay, the budget is recomputed from that
-      fresh measurement, and the mutant must exceed *that* budget. A
-      baseline that no longer passes leaves no calibration at all, which
-      is an error rather than a kill;
-    - the replay must reproduce the same kill *kind*. An observed failure
-      and a timeout are different claims, so one cannot confirm the other
-      (see ``KillKind``); and
-    - an observed kill must name the same laws. Which law defends a
-      behavior is read out of ``failed_tests``, so two runs that disagree
-      about the killing law leave that reading unsupported even though
-      both runs said "killed".
+    Observed failures replay the original typed inputs and exception
+    fingerprints without generating new examples. A timeout has no retained
+    law failure: re-measure the complete baseline immediately before retrying
+    it, so contention cannot turn two slow runs into a confirmed kill.
     """
     if run.kill_kind is KillKind.TIMEOUT:
         fresh = _run_pytest_in_copy(
@@ -1401,48 +1587,53 @@ def _confirm_kill(
             mutated_source=None,
             timeout_seconds=baseline_timeout_seconds,
         )
-        if fresh.exit_code != 0 or fresh.timed_out:
+        problem = _evidence_problem(fresh, expected=expected)
+        if (
+            fresh.exit_code != 0
+            or fresh.timed_out
+            or problem
+            or any(law.status != "passed" for law in fresh.obligations)
+        ):
             return _kill_did_not_replay(
                 run,
                 "timeout kill not confirmed: the re-measured baseline no longer"
                 f" passes (exit code {fresh.exit_code},"
-                f" timed out {str(fresh.timed_out).lower()}), so there is no"
+                f" timed out {str(fresh.timed_out).lower()};"
+                f" {problem or 'baseline did not pass'}), so there is no"
                 " calibration left to time this mutant against",
             )
         replay_baseline = fresh.duration_seconds
         replay_budget = max(timeout_floor_seconds, timeout_multiplier * replay_baseline)
+        replay_evidence = None
+        method = "timeout"
     else:
         replay_baseline = baseline_duration
         replay_budget = budget_seconds
+        replay_evidence = run.evidence
+        method = "exact"
 
-    replay = _run_one_mutant(
+    replay = _run_pytest_in_copy(
         boundary,
-        mutation,
-        budget_seconds=replay_budget,
-        baseline_duration=replay_baseline,
-        timeout_multiplier=timeout_multiplier,
+        mutated_source=mutation.mutated_source,
+        timeout_seconds=replay_budget,
+        replay_evidence=replay_evidence,
     )
-
-    if replay.outcome is not MutationOutcome.KILLED:
+    run = replace(
+        run,
+        replay_method=method,
+        replay_evidence=replay.evidence,
+        replay_exit_code=replay.exit_code,
+        replay_timed_out=replay.timed_out,
+        replay_duration_seconds=replay.duration_seconds,
+    )
+    if run.kill_kind is KillKind.TIMEOUT:
+        problem = None if replay.timed_out else "calibrated timeout did not repeat"
+    else:
+        problem = _replay_problem(replay, run.evidence)
+    if problem:
         return _kill_did_not_replay(
-            run,
-            "kill did not replay: first run killed, replay"
-            f" {replay.outcome.value} ({replay.note})",
-        )
-    if replay.kill_kind is not run.kill_kind:
-        return _kill_did_not_replay(
-            run,
-            "kill did not replay in kind: first run"
-            f" {_kind_name(run.kill_kind)}, replay {_kind_name(replay.kill_kind)}",
-        )
-    if run.kill_kind is KillKind.OBSERVED and set(replay.failed_tests) != set(
-        run.failed_tests
-    ):
-        return _kill_did_not_replay(
-            run,
-            "attribution did not replay: first run killed by"
-            f" {_law_list(run.failed_tests)}, replay killed by"
-            f" {_law_list(replay.failed_tests)}",
+            replace(run, output=run.output + "\n--- replay ---\n" + replay.output),
+            f"kill did not replay: {problem}",
         )
     if run.kill_kind is KillKind.TIMEOUT:
         return replace(
@@ -1452,7 +1643,7 @@ def _confirm_kill(
                 f" at {replay_baseline:.2f}s (budget {replay_budget:.1f}s)"
             ),
         )
-    return replace(run, note=f"{run.note}; replay confirmed")
+    return replace(run, note=f"{run.note}; exact replay confirmed")
 
 
 def mutate(
@@ -1481,11 +1672,10 @@ def mutate(
        raises; if the laws still pass, the laws never observed the
        boundary module and the whole report is INVALID EVIDENCE;
     4. reject mutants that do not compile as invalid without running;
-    5. run the unchanged laws against every remaining mutant and classify
-       via ``classify_mutant_exit`` (exception = kill, calibrated timeout
-       = kill, load failure = invalid, harness trouble = error);
-    6. rerun every kill once — a kill that does not replay becomes an
-       error rather than inflating strength; and
+    5. require matching complete law obligations and retained failures for
+       ordinary candidate kills; preserve calibrated timeout attribution;
+    6. replay retained failures exactly, or repeat a freshly calibrated timeout;
+       an unconfirmed candidate becomes an error; and
     7. apply the equivalence ledger to survivors only, keeping stale
        entries visible in the report.
     """
@@ -1523,6 +1713,8 @@ def mutate(
         timed_out=baseline_run.timed_out,
         output=baseline_run.output,
         command=baseline_run.command,
+        obligations=baseline_run.obligations,
+        evidence_error=_evidence_problem(baseline_run),
     )
 
     if not baseline.valid:
@@ -1566,16 +1758,27 @@ def mutate(
             mutated_source=poison_source(implementation_source),
             timeout_seconds=budget_seconds,
         )
+        if canary_run.timed_out:
+            canary_problem = None
+            canary_note = f"calibrated timeout after {budget_seconds:.1f}s"
+        else:
+            canary_problem = _evidence_problem(
+                canary_run, expected=baseline.obligations, require_retained=False
+            )
+            canary_note = canary_problem or (
+                _unwired_note(boundary)
+                if canary_run.exit_code == 0
+                else f"canary run exit code {canary_run.exit_code}"
+            )
         canary = CanaryRun(
             exit_code=canary_run.exit_code,
             timed_out=canary_run.timed_out,
             duration_seconds=canary_run.duration_seconds,
-            note=(
-                _unwired_note(boundary)
-                if canary_run.exit_code == 0 and not canary_run.timed_out
-                else f"canary run exit code {canary_run.exit_code}"
-            ),
+            note=canary_note,
             output=canary_run.output,
+            obligations=canary_run.obligations,
+            evidence=canary_run.evidence,
+            evidence_error=canary_problem,
         )
         if canary.wired is not True:
             # No mutant may be scored in either direction: survivors
@@ -1624,6 +1827,7 @@ def mutate(
             budget_seconds=budget_seconds,
             baseline_duration=baseline.duration_seconds,
             timeout_multiplier=timeout_multiplier,
+            expected=baseline.obligations,
         )
         if run.outcome is MutationOutcome.KILLED:
             # Rule 3: a kill that does not replay is an error, and what
@@ -1639,6 +1843,7 @@ def mutate(
                 timeout_multiplier=timeout_multiplier,
                 timeout_floor_seconds=timeout_floor_seconds,
                 baseline_timeout_seconds=baseline_timeout_seconds,
+                expected=baseline.obligations,
             )
         finished.append(run)
 

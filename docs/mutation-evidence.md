@@ -31,7 +31,8 @@ strength than that narrow evidence supports.
 
 For one frozen implementation and law suite:
 
-1. verify that the unmodified implementation passes, and measure its
+1. verify that the unmodified implementation passes with a nonempty, complete
+   inventory of passed tlaw law obligations, and measure its
    duration — that measurement calibrates every mutant's timeout budget;
 2. generate deterministic, reproducible source changes within the declared
    implementation boundary;
@@ -42,12 +43,11 @@ For one frozen implementation and law suite:
 5. reject mutations that cannot be built or loaded without counting them as
    law successes;
 6. run the unchanged laws against every runnable mutation in a fresh copy of
-   the boundary directory;
-7. record the exact law and minimized input that rejects each mutation;
-8. rerun every kill once and require the *same evidence* back, not merely
-   the same verdict — same kill kind, same named laws, and for a timeout a
-   freshly re-measured baseline; a kill that does not replay that way is an
-   error, not a kill; and
+   the boundary directory and require the same completed law inventory;
+7. retain the failed law identities, typed inputs, and exception fingerprints;
+8. replay those exact failures against the same mutant in a fresh copy, or
+   confirm a timeout after a fresh complete baseline recalibrates its budget;
+   an unconfirmed candidate is an error, not a kill; and
 9. show every surviving mutation rather than hiding it behind one percentage.
 
 The canary is a default with no opt-out. The failure it prevents is silent
@@ -65,23 +65,17 @@ truth.
 
 Every generated mutation needs one explicit outcome:
 
-- **killed:** the mutant behaved differently from the passing baseline. A
-  kill has a *kind*, because the two ways it can happen are not the same
-  evidence: an **observed** kill means a law compared false or the mutated
-  implementation raised, and the run names the laws that rejected it; a
-  **timeout** kill means the run exceeded a budget calibrated against the
-  measured baseline duration, which is a real behavioral difference that no
-  law reported and that therefore names nothing;
-- **survived:** all laws passed, and the kill-or-survive attribution is
-  trusted because the same laws passed the unmutated baseline first;
+- **killed:** an **observed** kill has complete law execution and retained
+  counterexamples that reproduce exactly; a **timeout** kill repeats its timeout
+  after a fresh complete baseline recalibrates the budget and names no law;
+- **survived:** the same complete law inventory passed against the mutant
+  after passing against the baseline;
 - **invalid:** the mutation could not build or load — the baseline collected
   these laws, so a collection failure under a mutant is a load failure,
   never a kill and never a law success;
-- **error:** the harness could not evaluate the mutant, or a kill failed to
-  reproduce on its second fresh run — including a kill that came back as a
-  different kind, an observed kill that came back naming different laws, and
-  a timeout whose re-measured baseline no longer passes. tlaw claims less
-  strength rather than counting an unrepeatable failure; or
+- **error:** execution evidence was missing, incomplete, or inconsistent;
+  a refutation could not be retained; or confirmation failed to reproduce the
+  exact law failure or the calibrated timeout; or
 - **unresolved equivalent:** a survivor whose committed ledger entry explains
   why the change is not observable within the declared boundary.
 
@@ -114,6 +108,26 @@ that name different laws leave that reading unsupported even though both said
 "killed". Only a confirmed observed kill ever carries law names; a downgraded
 run keeps its first run's attribution in its note, as history rather than as a
 law that rejected the mutant.
+
+Ordinary pytest tests still run, but cannot supply tlaw law obligations or a
+retained law failure. Skips, xfails, setup/teardown failures, and changes to the
+collected law cases prevent ordinary outcome attribution. Exact replay runs
+only the retained inputs and verifies the same exception type and message;
+rerunning generation and finding another failure is not confirmation.
+
+The `tlaw.mutation/v1` JSON report retains the original per-mutant `evidence`
+and fresh `replay_evidence`, plus `replay_method` (`exact` or `timeout`) and the
+confirmation process's exit code, timeout flag, and duration. Timeout attempts
+can lack a completed law receipt; that missing observation is left unavailable.
+The method describes the attempt, while the outcome and note describe whether
+it confirmed a kill. A passed exact replay receipt records reproduction of the
+saved failure, not a passing original implementation.
+
+The mandatory canary also needs complete matching obligations and an actual
+law failure for an ordinary wiring result. A canary refutation need not be
+encodable to prove the poisoned implementation was observed. The calibrated
+timeout path remains separate. The boundary copies and package shadowing rules
+are unchanged.
 
 The truthful strength statement is narrow:
 

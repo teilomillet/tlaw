@@ -6,6 +6,51 @@ files into this document when the release is prepared.
 
 <!-- towncrier release notes start -->
 
+## 0.0.7 — 2026-10-23
+
+### Added
+
+- Add `tlaw.recursive()` for visible finite recursive input domains with
+  explicit leaf budgets.
+- Add a self-law suite with independently checked known-wrong challenges and
+  exact counterexample replay to the repository gate.
+- Add a short worked example covering checks, retained counterexample JSON,
+  exact replay, repair, and mutation, and verify it against an installed wheel
+  before publication.
+- Add opt-in exhaustive checks for small finite domains with explicit case
+  counts, separate sampled evidence, and retained counterexamples for exact
+  replay.
+- Extend exhaustive checks to bounded lists over finite domains, including
+  nested lists, and report their length bounds alongside case counts.
+- Extend exhaustive checks to dictionary-form records with independent finite
+  fields, including nested records and bounded lists, with exact case counts
+  and nested list-bound paths.
+
+### Changed
+
+- Add independently confirmed symbolic contracts and mutation-graded self-laws
+  to the maintained core evidence gates.
+- Run the complete repository gate before building and publishing a release.
+
+### Fixed
+
+- Make `tlaw.same()` and `tlaw.excludes()` terminate on recursive value graphs
+  while retaining finite-path differences and leaks.
+- Prevent checks and replays from succeeding when law execution is skipped,
+  expected to fail, incomplete, or absent.
+- Reject integer bounds that `tlaw.number()` cannot represent exactly instead
+  of silently widening the generated domain.
+- Replay relative law paths from the retained report's checkout when invoked
+  from another working directory.
+- Report JSON write failures from `tlaw mutate` and `tlaw audit` as CLI errors
+  without a traceback.
+- Require complete law obligations for mutation evidence and confirm ordinary
+  kills with exact retained-input replay while preserving isolated canary
+  checks and separately confirmed calibrated timeouts.
+- Treat mutation runs with no generated challenges as invalid evidence instead
+  of success.
+
+
 ## 0.0.6 — 2026-07-27
 
 ### Fixed

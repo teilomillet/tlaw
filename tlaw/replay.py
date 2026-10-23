@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import inspect
 import json
 import math
@@ -10,10 +11,12 @@ import os
 from pathlib import Path
 from typing import Any, Callable
 
+import hypothesis
 from hypothesis.control import current_build_context, currently_in_test_context
 
 from .audit import ManifestError
 from .comparison import Comparison
+from .obligations import Obligation, obligations_complete
 
 
 CAPTURE_ENV = "TLAW_CAPTURE"
@@ -299,6 +302,85 @@ def read_capture(path: Path) -> tuple[dict[str, Any], ...]:
     )
 
 
+def _portable_path(path: Path, *, working_directory: Path) -> str:
+    try:
+        return str(path.relative_to(working_directory))
+    except ValueError:
+        return str(path)
+
+
+def build_check_report(
+    law_path: Path,
+    *,
+    working_directory: Path,
+    mode: str,
+    seed: int | None,
+    pytest_exit_code: int,
+    captured: tuple[dict[str, Any], ...],
+    obligations: tuple[Obligation, ...],
+) -> dict[str, Any]:
+    portable = _portable_path(law_path, working_directory=working_directory)
+    failures = []
+    for raw in captured:
+        failure = dict(raw)
+        source_path = Path(failure.pop("source_path"))
+        source = (
+            portable
+            if source_path == law_path
+            else _portable_path(source_path, working_directory=working_directory)
+        )
+        failure["source"] = {
+            "path": source,
+            "line": failure.pop("source_line"),
+        }
+        failure["identity"] = f"{source}::{failure['name']}"
+        failures.append(failure)
+    failures.sort(key=lambda failure: failure["identity"])
+    public_obligations = []
+    for law in obligations:
+        source, name = law.identity.rsplit("::", 1)
+        path = _portable_path(Path(source), working_directory=working_directory)
+        public_obligations.append({**law.to_dict(), "identity": f"{path}::{name}"})
+
+    # A counterexample that cannot be encoded is a limit of the *evidence*,
+    # never a claim about the code under law: `capture_error` is only ever
+    # "this input type has no safe replay encoding". Reporting the run as
+    # invalid because of it would erase the thing tlaw actually established
+    # — that the law was refuted — so the two facts are kept apart. The
+    # refutation decides `status`; retention is its own field.
+    unretained = [
+        failure["capture_error"]
+        for failure in failures
+        if failure.get("capture_error") is not None
+    ]
+    if failures:
+        status = "failed"
+    elif pytest_exit_code == 0 and obligations_complete(obligations):
+        status = "passed"
+    else:
+        status = "invalid"
+    return {
+        "schema": REPORT_SCHEMA,
+        "law_file": portable,
+        "law_sha256": hashlib.sha256(law_path.read_bytes()).hexdigest(),
+        "mode": mode,
+        "seed": seed,
+        "hypothesis_version": hypothesis.__version__,
+        "pytest_exit_code": pytest_exit_code,
+        "summary": {
+            "failures": len(failures),
+            "status": status,
+            # False when at least one retained failure has no replayable
+            # inputs. Separate from `status` so "the law was refuted" and
+            # "the counterexample could not be retained" never overwrite
+            # each other.
+            "retained": not unretained,
+        },
+        "failures": failures,
+        "obligations": public_obligations,
+    }
+
+
 def load_report(path: str | Path) -> dict[str, Any]:
     """Load and validate a retained public report without executing its law."""
     report_path = Path(path)
@@ -429,6 +511,7 @@ __all__ = [
     "REPLAY_ROOT_ENV",
     "REPORT_SCHEMA",
     "SEED_ENV",
+    "build_check_report",
     "capture_failure",
     "decode_value",
     "decoded_arguments",

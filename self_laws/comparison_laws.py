@@ -90,33 +90,43 @@ def infinities_match_only_when_their_signs_match(value: SmallInt) -> bool:
 
 @tlaw.law
 def cycles_use_structural_value_semantics(value: SmallInt) -> bool:
-    left: list[object] = []
-    right: list[object] = []
-    left.extend([left, {"value": value}])
-    right.extend([right, {"value": value}])
-    if not same(left, right).matched:
+    # Termination is part of this cycle contract; recursion is a stable
+    # law refutation even when the stack limit is reached at different sites.
+    try:
+        left: list[object] = []
+        right: list[object] = []
+        left.extend([left, {"value": value}])
+        right.extend([right, {"value": value}])
+        if not same(left, right).matched:
+            return False
+        right[1] = {"value": value + 1}
+        difference = same(left, right).difference
+        return (
+            difference is not None
+            and difference.path == "[1]['value']"
+            and difference.left == value
+            and difference.right == value + 1
+        )
+    except RecursionError:
         return False
-    right[1] = {"value": value + 1}
-    difference = same(left, right).difference
-    return (
-        difference is not None
-        and difference.path == "[1]['value']"
-        and difference.left == value
-        and difference.right == value + 1
-    )
 
 
 @tlaw.law
 def mapping_cycles_use_the_same_structural_semantics(value: SmallInt) -> bool:
-    left: dict[str, object] = {"value": value}
-    right: dict[str, object] = {"value": value}
-    left["self"] = left
-    right["self"] = right
-    if not same(left, right).matched:
+    # Termination is part of this cycle contract; recursion is a stable
+    # law refutation even when the stack limit is reached at different sites.
+    try:
+        left: dict[str, object] = {"value": value}
+        right: dict[str, object] = {"value": value}
+        left["self"] = left
+        right["self"] = right
+        if not same(left, right).matched:
+            return False
+        right["value"] = value + 1
+        difference = same(left, right).difference
+        return difference is not None and difference.path == "['value']"
+    except RecursionError:
         return False
-    right["value"] = value + 1
-    difference = same(left, right).difference
-    return difference is not None and difference.path == "['value']"
 
 
 @tlaw.law

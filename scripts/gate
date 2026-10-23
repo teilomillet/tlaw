@@ -10,11 +10,12 @@
 #   1. the committed dependency lock still matches pyproject.toml;
 #   2. pending changelog fragments are valid and renderable;
 #   3. ruff lint and formatting;
-#   4. the full property suite;
+#   4. the full property suite and independent self-law regressions;
 #   5. independent symbolic contracts are confirmed over all paths;
-#   6. tlaw's core self-laws and flat example laws still pass; and
-#   7. the flat examples still kill their generated mutants — the repo
-#      dogfoods its own strength meter on every push.
+#   6. core self-laws and known-wrong challenges pass;
+#   7. all example laws pass;
+#   8. the flat examples reject their generated mutations; and
+#   9. the built wheel supports the worked example in a fresh environment.
 set -eu
 cd "$(git rev-parse --show-toplevel)"
 
@@ -24,9 +25,11 @@ uv run ruff check .
 uv run ruff format --check .
 uv run pytest -q
 ./scripts/crosshair
-# Core self-laws stay in the fast gate. Their exhaustive mutation campaign
+# Core self-laws stay in the fast gate. Their full mutation campaign
 # lives in scripts/core-evidence and a dedicated CI workflow.
 uv run tlaw check self_laws/
+uv run tlaw check selflaws/
+uv run tlaw audit selflaws/audit.py
 # Folder discovery checks every example's laws in one command, which also
 # dogfoods `tlaw check <folder>` on every push.
 uv run tlaw check examples/
@@ -38,5 +41,6 @@ uv run tlaw mutate examples/score_weights/laws.py \
 uv run tlaw mutate examples/rescale/laws.py \
     examples/rescale/implementation.py \
     --equivalents examples/rescale/equivalents.toml
+uv run python scripts/check_installed.py
 
 echo "gate: every check passed"

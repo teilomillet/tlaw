@@ -10,6 +10,7 @@ import types
 from typing import Union
 from dataclasses import dataclass, field, replace
 from functools import wraps
+from pathlib import Path as FilePath
 from typing import (
     Annotated,
     Any,
@@ -25,6 +26,7 @@ from typing import (
 
 from hypothesis import given, seed as hypothesis_seed, settings
 from hypothesis import strategies as st
+from hypothesis.errors import UnsatisfiedAssumption
 from hypothesis.strategies import SearchStrategy
 
 from .audit import TARGET_ENV
@@ -32,6 +34,8 @@ from .category import Arrow, arrow, identity
 from .comparison import Comparison
 from .domains import DependentDomain, Domain, generation_order
 from .exclusion import Exclusion
+from .finite import DEFAULT_MAX_CASES, MAX_CASES_ENV, finite_plan
+from .obligations import CaseProgress
 from .outcome import Outcome
 from .refusal import Refusal
 from .replay import (
@@ -627,7 +631,13 @@ def _decorate_law(
 ) -> Callable[[], None]:
     inferred = strategies is None
     search = os.environ.get(MODE_ENV) == "search"
-    if search:
+    exhaustive = os.environ.get(MODE_ENV) == "exhaustive"
+    replaying = bool(os.environ.get(REPLAY_ENV))
+    failures = replay_failures(function) if replaying else ()
+    progress = CaseProgress("sampled")
+    if exhaustive:
+        generation = "exhaustive"
+    elif search:
         generation = (
             "search-seeded-inferred" if inferred else "search-seeded-explicit-settings"
         )
@@ -686,6 +696,12 @@ def _decorate_law(
                     snapshots,
                     description=description,
                 )
+        except UnsatisfiedAssumption as error:
+            if exhaustive:
+                raise TypeError(
+                    "exhaustive checks cannot discard inputs with assume() or reject()"
+                ) from error
+            raise
         except Exception as error:
             capture_failure(
                 function,
@@ -698,8 +714,7 @@ def _decorate_law(
             )
             raise
 
-    if os.environ.get(REPLAY_ENV):
-        failures = replay_failures(function)
+    if replaying:
         if not failures:
             # Replay means exactly the retained failures, not every law or
             # ordinary pytest test that happens to share the file.
@@ -711,7 +726,9 @@ def _decorate_law(
             return ignored
 
         def replay_test() -> None:
+            progress.cases_checked = 0
             for index, failure in enumerate(failures, start=1):
+                progress.cases_checked += 1
                 label = (
                     "retained counterexample"
                     if len(failures) == 1
@@ -735,11 +752,80 @@ def _decorate_law(
         replay_test.__name__ = function.__name__
         replay_test.__doc__ = function.__doc__
         replay_test.__test__ = True
+        replay_test.pytestmark = [
+            mark
+            for mark in getattr(function, "pytestmark", ())
+            if mark.name != "parametrize"
+        ]
         replay_test.__tlaw_description__ = description
         replay_test.__tlaw_replay_identity__ = failures[0]["identity"]
+        progress = CaseProgress("replay", 0, len(failures))
+        replay_test.__tlaw_progress__ = progress
         return replay_test
 
-    if inferred:
+    if exhaustive:
+        signature = inspect.signature(function)
+        if any(
+            parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD)
+            for parameter in signature.parameters.values()
+        ):
+            raise TypeError("exhaustive laws do not support variadic parameters")
+        if inferred:
+            specifications = inspect.get_annotations(function, eval_str=True)
+            specifications = {
+                name: specifications.get(name, inspect.Parameter.empty)
+                for name in signature.parameters
+            }
+        else:
+            specifications = dict(strategies)
+            if not specifications.keys() <= signature.parameters.keys():
+                raise TypeError("exhaustive domains must name law parameters")
+        for name, annotation in specifications.items():
+            annotation = _unwrap_alias(annotation)
+            if get_origin(annotation) is Annotated:
+                # Reuse the existing metadata and base/domain compatibility checks.
+                _domain_strategy(annotation, description=description, parameter=name)
+                annotation = get_args(annotation)[1]
+            specifications[name] = annotation
+        limit = int(os.environ.get(MAX_CASES_ENV, DEFAULT_MAX_CASES))
+        plan = finite_plan(specifications, limit=limit)
+        progress = CaseProgress(
+            "exhaustive", 0, plan.total, list_bounds=plan.list_bounds
+        )
+
+        @wraps(function)
+        def exhaustive_test(**fixtures: Any) -> None:
+            progress.cases_checked = 0
+            progress.exhausted = False
+            for generated in plan.arguments():
+                arguments = {**fixtures, **generated}
+                positional = tuple(
+                    arguments.pop(name)
+                    for name, parameter in signature.parameters.items()
+                    if parameter.kind is parameter.POSITIONAL_ONLY
+                )
+                bound = signature.bind(*positional, **arguments)
+                bound.apply_defaults()
+                progress.cases_checked += 1
+                check(*bound.args, **bound.kwargs)
+            progress.exhausted = True
+
+        exhaustive_test.__name__ = function.__name__
+        exhaustive_test.__doc__ = function.__doc__
+        exhaustive_test.__signature__ = signature.replace(
+            parameters=[
+                parameter
+                for name, parameter in signature.parameters.items()
+                if name not in specifications
+            ]
+        )
+        hypothesis_test = exhaustive_test
+        inputs = (
+            _annotation_text(function)
+            if inferred
+            else tuple(f"{name}: {value!r}" for name, value in strategies.items())
+        )
+    elif inferred:
         resolved = _domain_strategies(function, description=description)
         if resolved is None:
             hypothesis_test = given(...)(check)
@@ -777,9 +863,14 @@ def _decorate_law(
         hypothesis_test = hypothesis_seed(int(seed))(hypothesis_test)
     hypothesis_test.__test__ = True
     hypothesis_test.__tlaw_description__ = description
+    source = inspect.getsourcefile(function) or inspect.getfile(function)
+    hypothesis_test.__tlaw_identity__ = (
+        f"{FilePath(source).resolve()}::{function.__name__}"
+    )
     hypothesis_test.__tlaw_inputs__ = inputs
     hypothesis_test.__tlaw_max_examples__ = INFERRED_MAX_EXAMPLES if inferred else None
     hypothesis_test.__tlaw_deterministic__ = inferred and not search
+    hypothesis_test.__tlaw_progress__ = progress
     return hypothesis_test
 
 

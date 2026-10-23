@@ -15,6 +15,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from tlaw.obligations import Obligation
 from tlaw.mutation import (
     BaselineRun,
     CanaryRun,
@@ -63,6 +64,13 @@ def test_the_canary_verdict_is_total_and_conservative(
         timed_out=timed_out,
         duration_seconds=1.0,
         note="fixed evidence",
+        obligations=(
+            Obligation(
+                "laws.py::law",
+                "laws.py::law",
+                "failed" if exit_code == 1 else "passed",
+            ),
+        ),
     )
 
     if timed_out or exit_code == 1:
@@ -74,6 +82,20 @@ def test_the_canary_verdict_is_total_and_conservative(
     else:
         # Harness trouble: wiring is unverified, never assumed.
         assert canary.wired is None
+
+
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_ordinary_canary_exits_without_law_evidence_leave_wiring_unverified(
+    exit_code: int,
+) -> None:
+    canary = CanaryRun(
+        exit_code=exit_code,
+        timed_out=False,
+        duration_seconds=1.0,
+        note="no execution receipt",
+    )
+
+    assert canary.wired is None
 
 
 def test_an_unkilled_canary_invalidates_the_evidence() -> None:
@@ -88,10 +110,19 @@ def test_an_unkilled_canary_invalidates_the_evidence() -> None:
     result = MutationResult(
         laws="laws.py",
         implementation="implementation.py",
-        baseline=BaselineRun(exit_code=0, duration_seconds=1.0, timed_out=False),
+        baseline=BaselineRun(
+            exit_code=0,
+            duration_seconds=1.0,
+            timed_out=False,
+            obligations=(Obligation("laws.py::law", "laws.py::law", "passed"),),
+        ),
         runs=(MutantRun(mutation=mutation, outcome=MutationOutcome.ERROR, note=""),),
         canary=CanaryRun(
-            exit_code=0, timed_out=False, duration_seconds=1.0, note="unwired"
+            exit_code=0,
+            timed_out=False,
+            duration_seconds=1.0,
+            note="unwired",
+            obligations=(Obligation("laws.py::law", "laws.py::law", "passed"),),
         ),
     )
 

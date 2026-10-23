@@ -17,6 +17,7 @@ from hypothesis import strategies as st
 
 from tlaw import mutation as mutation_module
 from tlaw.audit import ManifestError
+from tlaw.obligations import Obligation
 from tlaw.mutation import (
     BaselineRun,
     Boundary,
@@ -44,6 +45,8 @@ SOURCE = textwrap.dedent(
         return 1
     """
 ).strip()
+
+PASSED_LAW = Obligation("laws.py::law", "laws.py::law", "passed")
 
 
 @given(exit_code=st.integers(min_value=0, max_value=6), timed_out=st.booleans())
@@ -172,7 +175,12 @@ def test_the_report_shows_every_mutant_and_never_a_percentage(
     result = MutationResult(
         laws="laws.py",
         implementation="implementation.py",
-        baseline=BaselineRun(exit_code=0, duration_seconds=1.0, timed_out=False),
+        baseline=BaselineRun(
+            exit_code=0,
+            duration_seconds=1.0,
+            timed_out=False,
+            obligations=(PASSED_LAW,),
+        ),
         runs=runs,
         budget_seconds=10.0,
         timeout_multiplier=10.0,
@@ -190,7 +198,12 @@ def test_the_report_shows_every_mutant_and_never_a_percentage(
 
 
 def test_invalid_mutants_do_not_break_evidence_but_errors_do() -> None:
-    baseline = BaselineRun(exit_code=0, duration_seconds=1.0, timed_out=False)
+    baseline = BaselineRun(
+        exit_code=0,
+        duration_seconds=1.0,
+        timed_out=False,
+        obligations=(PASSED_LAW,),
+    )
     invalid_only = MutationResult(
         laws="laws.py",
         implementation="implementation.py",
@@ -213,6 +226,12 @@ def test_invalid_mutants_do_not_break_evidence_but_errors_do() -> None:
     assert invalid_only.has_errors is False
     assert with_error.has_errors is True
     assert bad_baseline.has_errors is True
+
+
+def test_passing_pytest_exit_without_law_evidence_is_not_a_valid_baseline() -> None:
+    baseline = BaselineRun(exit_code=0, duration_seconds=1.0, timed_out=False)
+
+    assert baseline.valid is False
 
 
 def test_the_ledger_file_is_validated_before_it_is_trusted(tmp_path) -> None:
@@ -276,19 +295,29 @@ def _kill(kind: KillKind, *, failed_tests: tuple[str, ...] = ()) -> MutantRun:
         timed_out=kind is KillKind.TIMEOUT,
         failed_tests=failed_tests,
         kill_kind=kind,
+        evidence={"failures": [{"identity": name} for name in failed_tests]},
     )
 
 
 def _confirm(monkeypatch, tmp_path, first: MutantRun, replay: MutantRun) -> MutantRun:
-    """Run the guard with a fixed replay result and a passing baseline."""
-    monkeypatch.setattr(mutation_module, "_run_one_mutant", lambda *a, **k: replay)
-    monkeypatch.setattr(
-        mutation_module,
-        "_run_pytest_in_copy",
-        lambda *a, **k: mutation_module._PytestRun(
-            exit_code=0, timed_out=False, duration_seconds=1.0, output="", command=()
-        ),
-    )
+    """Supply the next process result and a complete, passing fresh baseline."""
+
+    def child(*args, **kwargs):
+        if kwargs["mutated_source"] is None:
+            return mutation_module._PytestRun(
+                0, False, 1.0, "", (), obligations=(PASSED_LAW,)
+            )
+        if replay.kill_kind is KillKind.OBSERVED:
+            laws = tuple(
+                Obligation(name, name, "passed", "replay", 1, 1)
+                for name in replay.failed_tests
+            )
+            return mutation_module._PytestRun(0, False, 1.0, "", (), obligations=laws)
+        return mutation_module._PytestRun(
+            replay.exit_code or 0, replay.timed_out, 1.0, "", ()
+        )
+
+    monkeypatch.setattr(mutation_module, "_run_pytest_in_copy", child)
     return mutation_module._confirm_kill(
         _boundary(tmp_path),
         _mutation(),
@@ -298,6 +327,7 @@ def _confirm(monkeypatch, tmp_path, first: MutantRun, replay: MutantRun) -> Muta
         timeout_multiplier=10.0,
         timeout_floor_seconds=5.0,
         baseline_timeout_seconds=60.0,
+        expected=(PASSED_LAW,),
     )
 
 
@@ -312,7 +342,7 @@ def test_a_timeout_is_not_confirmed_by_an_observed_kill(monkeypatch, tmp_path) -
     )
 
     assert confirmed.outcome is MutationOutcome.ERROR
-    assert "did not replay in kind" in confirmed.note
+    assert "did not replay" in confirmed.note
     # An error is not a kill: it carries neither kind nor attribution.
     assert confirmed.kill_kind is None
     assert confirmed.failed_tests == ()
@@ -327,7 +357,7 @@ def test_an_observed_kill_is_not_confirmed_by_a_timeout(monkeypatch, tmp_path) -
     )
 
     assert confirmed.outcome is MutationOutcome.ERROR
-    assert "did not replay in kind" in confirmed.note
+    assert "did not replay" in confirmed.note
 
 
 def test_an_observed_kill_must_replay_with_the_same_laws(monkeypatch, tmp_path) -> None:
@@ -386,6 +416,7 @@ def test_a_timeout_kill_is_recalibrated_against_a_fresh_baseline(
         timeout_multiplier=10.0,
         timeout_floor_seconds=5.0,
         baseline_timeout_seconds=60.0,
+        expected=(PASSED_LAW,),
     )
 
     assert confirmed.outcome is MutationOutcome.ERROR
@@ -398,17 +429,15 @@ def test_a_confirmed_timeout_kill_records_the_fresh_calibration(
 ) -> None:
     seen: list[float] = []
 
-    def fresh_baseline(*args, **kwargs):
-        return mutation_module._PytestRun(
-            exit_code=0, timed_out=False, duration_seconds=4.0, output="", command=()
-        )
+    def child(*args, **kwargs):
+        if kwargs["mutated_source"] is None:
+            return mutation_module._PytestRun(
+                0, False, 4.0, "", (), obligations=(PASSED_LAW,)
+            )
+        seen.append(kwargs["timeout_seconds"])
+        return mutation_module._PytestRun(124, True, 40.0, "", ())
 
-    def retry(*args, **kwargs):
-        seen.append(kwargs["budget_seconds"])
-        return _kill(KillKind.TIMEOUT)
-
-    monkeypatch.setattr(mutation_module, "_run_pytest_in_copy", fresh_baseline)
-    monkeypatch.setattr(mutation_module, "_run_one_mutant", retry)
+    monkeypatch.setattr(mutation_module, "_run_pytest_in_copy", child)
 
     confirmed = mutation_module._confirm_kill(
         _boundary(tmp_path),
@@ -419,6 +448,7 @@ def test_a_confirmed_timeout_kill_records_the_fresh_calibration(
         timeout_multiplier=10.0,
         timeout_floor_seconds=5.0,
         baseline_timeout_seconds=60.0,
+        expected=(PASSED_LAW,),
     )
 
     # The retry is timed against the baseline as it is *now* (4.0s x 10),
@@ -533,6 +563,7 @@ def test_a_timed_out_run_is_scraped_for_no_attribution(monkeypatch, tmp_path) ->
         budget_seconds=7.8,
         baseline_duration=0.78,
         timeout_multiplier=10.0,
+        expected=(PASSED_LAW,),
     )
 
     assert run.outcome is MutationOutcome.KILLED
@@ -550,6 +581,16 @@ def test_a_timed_out_run_is_scraped_for_no_attribution(monkeypatch, tmp_path) ->
             duration_seconds=1.0,
             output=partial_output,
             command=(),
+            obligations=(
+                Obligation("laws.py::first_law", "laws.py::first_law", "failed"),
+                Obligation("laws.py::second_law", "laws.py::second_law", "failed"),
+            ),
+            evidence={
+                "failures": [
+                    {"identity": "laws.py::first_law"},
+                    {"identity": "laws.py::second_law"},
+                ]
+            },
         ),
     )
     finished = mutation_module._run_one_mutant(
@@ -558,7 +599,90 @@ def test_a_timed_out_run_is_scraped_for_no_attribution(monkeypatch, tmp_path) ->
         budget_seconds=7.8,
         baseline_duration=0.78,
         timeout_multiplier=10.0,
+        expected=(
+            Obligation("laws.py::first_law", "laws.py::first_law", "passed"),
+            Obligation("laws.py::second_law", "laws.py::second_law", "passed"),
+        ),
     )
 
     assert finished.kill_kind is KillKind.OBSERVED
     assert finished.failed_tests == ("laws.py::first_law", "laws.py::second_law")
+
+
+@pytest.mark.parametrize(
+    "fresh_obligations",
+    [
+        (),
+        (Obligation("laws.py::law", "laws.py::law", "skipped"),),
+        (Obligation("laws.py::different", "laws.py::different", "passed"),),
+        (Obligation("laws.py::law", "laws.py::law", "failed"),),
+    ],
+    ids=["missing", "skipped", "changed-inventory", "failed"],
+)
+def test_timeout_recalibration_requires_the_complete_original_baseline(
+    monkeypatch, tmp_path, fresh_obligations: tuple[Obligation, ...]
+) -> None:
+    calls: list[str | None] = []
+
+    def child(*args, **kwargs):
+        calls.append(kwargs["mutated_source"])
+        assert kwargs["mutated_source"] is None
+        return mutation_module._PytestRun(
+            0, False, 1.0, "", (), obligations=fresh_obligations
+        )
+
+    monkeypatch.setattr(mutation_module, "_run_pytest_in_copy", child)
+    confirmed = mutation_module._confirm_kill(
+        _boundary(tmp_path),
+        _mutation(),
+        _kill(KillKind.TIMEOUT),
+        budget_seconds=10.0,
+        baseline_duration=1.0,
+        timeout_multiplier=10.0,
+        timeout_floor_seconds=5.0,
+        baseline_timeout_seconds=60.0,
+        expected=(PASSED_LAW,),
+    )
+
+    assert calls == [None]
+    assert confirmed.outcome is MutationOutcome.ERROR
+    assert confirmed.kill_kind is None
+    assert confirmed.failed_tests == ()
+    assert "re-measured baseline no longer passes" in confirmed.note
+
+
+def test_incomplete_mutant_receipt_cannot_supply_attribution(
+    monkeypatch, tmp_path
+) -> None:
+    failed = Obligation("laws.py::law", "laws.py::law", "failed")
+    skipped = Obligation("laws.py::other", "laws.py::other", "skipped")
+    monkeypatch.setattr(
+        mutation_module,
+        "_run_pytest_in_copy",
+        lambda *args, **kwargs: mutation_module._PytestRun(
+            1,
+            False,
+            1.0,
+            "FAILED laws.py::law - AssertionError",
+            (),
+            obligations=(failed, skipped),
+            evidence={"failures": [{"identity": failed.identity}]},
+        ),
+    )
+
+    run = mutation_module._run_one_mutant(
+        _boundary(tmp_path),
+        _mutation(),
+        budget_seconds=10.0,
+        baseline_duration=1.0,
+        timeout_multiplier=10.0,
+        expected=(
+            PASSED_LAW,
+            Obligation("laws.py::other", "laws.py::other", "passed"),
+        ),
+    )
+
+    assert run.outcome is MutationOutcome.ERROR
+    assert run.kill_kind is None
+    assert run.failed_tests == ()
+    assert run.evidence["failures"] == [{"identity": failed.identity}]

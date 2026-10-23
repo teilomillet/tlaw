@@ -45,28 +45,39 @@ def mapping_keys_are_as_exposed_as_values(value: SmallInt) -> bool:
 
 @tlaw.law
 def cycles_are_traversed_once_without_hiding_later_leaks(value: SmallInt) -> bool:
-    clean: list[object] = []
-    clean.append(clean)
-    if not excludes(clean, SECRET).matched:
+    # Termination is part of this cycle contract; recursion is a stable
+    # law refutation even when the stack limit is reached at different sites.
+    try:
+        clean: list[object] = []
+        clean.append(clean)
+        if not excludes(clean, SECRET).matched:
+            return False
+        leaky: list[object] = []
+        leaky.extend([leaky, {"detail": f"{value}: {SECRET}"}])
+        result = excludes(leaky, SECRET)
+        return not result.matched and "value[1]['detail']" in result.explain()
+    except RecursionError:
         return False
-    leaky: list[object] = []
-    leaky.extend([leaky, {"detail": f"{value}: {SECRET}"}])
-    result = excludes(leaky, SECRET)
-    return not result.matched and "value[1]['detail']" in result.explain()
 
 
 @tlaw.law
 def dataclass_cycles_are_safe_and_searchable(value: SmallInt) -> bool:
-    @dataclass
-    class Node:
-        next: Node | None = None
-        detail: str = "safe"
+    # Termination is part of this cycle contract; recursion is a stable
+    # law refutation even when the stack limit is reached at different sites.
+    try:
 
-    clean = Node()
-    clean.next = clean
-    leaky = Node(detail=f"{value}: {SECRET}")
-    leaky.next = leaky
-    return excludes(clean, SECRET).matched and not excludes(leaky, SECRET).matched
+        @dataclass
+        class Node:
+            next: Node | None = None
+            detail: str = "safe"
+
+        clean = Node()
+        clean.next = clean
+        leaky = Node(detail=f"{value}: {SECRET}")
+        leaky.next = leaky
+        return excludes(clean, SECRET).matched and not excludes(leaky, SECRET).matched
+    except RecursionError:
+        return False
 
 
 @tlaw.law

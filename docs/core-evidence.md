@@ -16,6 +16,10 @@ different conclusion.
 3. `self_laws/` states the domain, comparison, exclusion, and typed-replay
    boundaries through tlaw's public interface. These laws run in the fast push
    gate, independently of the ordinary pytest suite.
+   Domain-generation laws retain an integer seed and use a bounded deterministic
+   draw schedule inside their bodies, so their counterexamples remain ordinary
+   replayable inputs. The separate `selflaws/` suite challenges the checker with
+   ten declared known-wrong implementations and independent regression tests.
 4. `scripts/core-evidence` mutates the core implementation files while leaving
    their self-laws unchanged. It succeeds only when every generated runnable
    mutation is killed or has an explicit reviewed equivalent declaration. The

@@ -1,6 +1,6 @@
 # Current tlaw behavior
 
-Status: implemented and verified on 2026-09-01. This document describes what
+Status: implemented and verified on 2026-10-23. This document describes what
 the current repository code does today. Design documents may describe future
 directions; this file does not.
 
@@ -85,6 +85,168 @@ visible in the ordinary Git diff.
 Exit code `0` means no law changed, `1` means the report contains reviewable
 law changes, and `2` means the Git range or source could not be read.
 
+## Exhaustive finite checking
+
+Ordinary checks use Hypothesis and report `sampled` evidence. Finite declarations
+can instead be enumerated explicitly:
+
+```console
+tlaw check laws.py --exhaustive --max-cases 1000 --json report.json
+tlaw check feature/ --exhaustive
+```
+
+The Python equivalents are `tlaw.check(path, exhaustive=True, max_cases=1000)`
+and `tlaw.check_folder(path, exhaustive=True, max_cases=1000)`. The default limit
+is 1,000 Cartesian combinations per law, or per pytest item when the law is
+parametrized. Folder checks apply that limit separately; it is not an aggregate
+execution budget. `--max-cases` requires `--exhaustive` and a positive integer.
+Exhaustive checking, randomized search, and replay are separate modes.
+
+Supported declarations are `bool`, `None`/`NoneType`, `typing.Literal`,
+`tlaw.integer(low, high)`, `tlaw.one_of(values)`, bounded `tlaw.list_of`
+over supported finite elements, and dictionary-form `tlaw.record` over finite
+independent fields. PEP 695 aliases and the existing `Annotated[type, domain]`
+form work too, with the same base/domain
+validation. Explicit `@tlaw.law("description", value=Domain)` declarations work
+and can leave other parameters to pytest fixtures or parametrization. Raw
+Hypothesis strategies, bare `int`/`str`, floating ranges, unbounded lists,
+constructor-based records, and `depends` are not enumerated. Unsupported
+declarations or an oversized product fail during collection, before any law body
+runs, with no sampling fallback.
+
+Finite choices must contain replay-safe built-in values: `None`, booleans,
+integers, floats, strings, bytes, and acyclic built-in containers of those values.
+Enums, subclasses of built-ins, and arbitrary objects are refused because the
+existing replay encoding cannot retain their exact types. A combination also
+cannot contain shared container references, within or across its generated
+parameters: replay retains values rather than object identities. Equal,
+independent containers and references confined to mutually exclusive choices
+remain supported. Choices preserve
+their declared order and duplicates, including type-distinct `False` and `0`;
+counts describe declaration entries rather than deduplicated values. A law with
+no generated parameters has one combination.
+
+### Bounded lists
+
+`list_of(element, min_size=0, max_size=N)` enumerates lists in ascending length
+order, then in the element declaration's Cartesian order. For an element domain
+with `m` entries, its case count is `sum(m**k for k in range(min_size, N + 1))`.
+Duplicate and type-distinct element entries count separately, just as in scalar
+choices. The empty list contributes one case when `min_size=0`.
+
+```python
+Move = tlaw.one_of(["left", "right"])
+Moves = tlaw.list_of(Move, max_size=4)
+
+
+@tlaw.law
+def reversing_twice_preserves_moves(moves: Moves):
+    return list(reversed(list(reversed(moves)))) == moves
+```
+
+Running `tlaw check laws.py --exhaustive` reports:
+
+```text
+exhaustive: laws.py::reversing_twice_preserves_moves; 31/31 cases checked; lengths: moves=0..4; all declared cases passed
+```
+
+JSON includes `"list_bounds": {"moves": {"min_size": 0, "max_size": 4}}` on
+the obligation. Nested lists work recursively: boolean lists of lengths `0..1`
+have three values, so lists of those values with lengths `0..2` have 13 cases.
+Their bounds appear under `moves` for the outer list and `moves[]` for each
+inner list. Multiple generated parameters multiply their case counts.
+Exhaustive folder output includes these per-law bounds and counts too, including
+partial counts for laws that fail before enumeration finishes.
+
+An explicit `max_size` and supported finite elements are required, even when
+the only permitted list is empty. Existing `list_of` authoring still accepts
+a tlaw domain or a concrete Python type as its element; use `one_of` for a
+finite choice of literals. Cardinality checks saturate at the case cap before
+enumeration, so huge powers or huge singleton ranges are not materialized.
+Lengths above Python's `sys.maxsize` are refused. The case cap limits
+combinations, not the memory or runtime of an individual input.
+
+Generated list containers are fresh across positions and cases. Mutable values
+declared through `one_of` keep their reference semantics: if a case would reuse
+the same container in two positions, preflight refuses it under the existing
+replay-safe reference rule. This also applies across generated parameters.
+
+### Dictionary records
+
+`record(name=domain, ...)` enumerates a dictionary for every combination of its
+independent finite fields. Its count is the product of the field counts.
+Fields keep their declaration order; the last field varies fastest. Records
+can nest, contain bounded lists, and be elements of bounded lists.
+
+```python
+Command = tlaw.record(
+    kind=tlaw.one_of(["credit", "debit"]),
+    amount=tlaw.integer(0, 2),
+)
+History = tlaw.list_of(Command, max_size=2)
+
+
+@tlaw.law
+def command_amounts_stay_bounded(history: History):
+    return all(0 <= command["amount"] <= 2 for command in history)
+```
+
+There are six commands, so this law enumerates `1 + 6 + 36 = 43` histories:
+
+```text
+exhaustive: laws.py::command_amounts_stay_bounded; 43/43 cases checked; lengths: history=0..2; all declared cases passed
+```
+
+Nested list bounds use field paths, for example `request.options.flags` and
+`history[].options.flags`. Non-identifier field names use JSON bracket notation:
+`request["options.flags"]` is distinct from `request.options.flags`. The same
+paths appear in normal output, exhaustive folder output, and JSON `list_bounds`.
+`--explain` also shows the declared field domains, including integer bounds and
+finite choices. Records without lists have an empty `list_bounds` mapping and
+still report exact case counts.
+
+Only dictionary-form records with independent supported finite fields are
+enumerated. Constructor-based records and dependent fields are refused before
+law bodies run, including when nested inside an empty-only list. Existing
+sampled support for those declarations is unchanged. Field declarations are
+retained explicitly; enumeration does not inspect Hypothesis strategies.
+
+The existing cap is checked against the complete product before dictionaries
+or lists are enumerated. Generated dictionaries and nested generated containers
+are independent across fields, positions, and cases. Declared `one_of` leaves
+retain the same replay-safe reference restrictions as other finite domains;
+sharing a mutable leaf across fields or positions is refused. Duplicate and
+type-distinct field choices remain separate cases. The first failure retains
+the original typed dictionary or history for exact replay through the existing
+codec, and mutation checks continue through the existing sampled runner.
+
+### Execution and evidence
+
+Declarations are snapshotted at collection, and each combination gets fresh
+copies. The inferred form retains its input-mutation guard; explicit laws retain
+their existing permission to mutate inputs. The first failing combination stops
+that law and is retained through the same typed counterexample and comparison
+machinery as sampled checks. Exhaustive failures are not shrunk. `assume()` and
+`reject()` are refused as execution errors: an exhaustive run cannot discard
+inputs. Hypothesis generation settings do not control enumeration.
+
+Each obligation records `method`, `cases_checked`, `cases_total`, `exhausted`, and
+`list_bounds`. Bounds describe declared exhaustive list domains; the mapping is
+empty for scalar-only, sampled, and replay obligations. Replay counts retained
+inputs and does not claim to enumerate the original list domain.
+
+| Method | Counts and completion |
+| --- | --- |
+| `sampled` | Both counts are `null`; `exhausted` is false even if Hypothesis happens to visit every finite value. |
+| `exhaustive` | Counts are attempted and declared combinations; a failing attempt counts, and `exhausted` is true only after every combination and pytest setup/teardown pass. |
+| `replay` | Counts are attempted and retained inputs; `exhausted` is always false. |
+
+Skip, xfail, setup/teardown errors, and interrupted execution cannot establish
+exhaustion. An exhausted result establishes the observed law outcomes for those
+declared inputs in that execution. It does not prove the law specification,
+hidden state, external effects, or behavior outside the declared domain.
+Mutation checks continue to challenge laws through the existing sampled runner.
+
 ## Randomized search and retained replay
 
 Inferred `tlaw check` remains deterministic by default. Search is explicit:
@@ -105,10 +267,12 @@ Every check now builds a structured `tlaw.check/v1` report; `--json` retains
 it. The report records:
 
 - the law file and its SHA-256 digest;
-- requested default or search mode, each failure's actual generation posture,
+- each selected law case's source/function identity, pytest node ID, execution
+  status, method, case counts, and exhaustion evidence in `obligations`;
+- requested default, search, or exhaustive mode, each failure's generation posture,
   the search seed, and Hypothesis version;
 - each failing law's module-path/function identity and source line;
-- the final shrunk generated inputs as typed JSON;
+- the final shrunk sampled inputs, or first failing exhaustive inputs, as typed JSON;
 - the exception type and complete message; and
 - for `tlaw.same`, both compared values, both tolerances, and the first
   difference.
@@ -128,7 +292,61 @@ Only failures named by the report are collected. Other tlaw laws and ordinary
 pytest tests in the file do not run. Replay exits `0` when every retained input
 produces the same exception type and message, `1` when an input passes or
 fails differently, and `2` for malformed evidence, missing law identities,
-timeouts, or other harness failures.
+timeouts, incomplete law execution, or other harness failures. Existing v1
+reports without `obligations` remain replayable: execution evidence is always
+collected afresh, never trusted from the saved report.
+
+Replay retains skip, xfail, and fixture policies. Function-level pytest
+parametrization is removed for replay because saved inputs already supply its
+values; both decorator orders are tested. Inherited module/class parametrization
+is not covered by this support. A replay result keeps the report's historical
+summary and mode, with fresh `replay` obligation evidence for the current run.
+
+### Law obligations
+
+`check` accounts for each selected, collected tlaw law case. Parametrized cases
+have separate pytest node IDs even when they share a source/function identity.
+Ordinary pytest tests still run during a check, but do not count as laws.
+
+Each obligation has one status:
+
+| Status | Meaning |
+| --- | --- |
+| `passed` | Setup, the law call, and teardown complete successfully. |
+| `failed` | The law call fails, with setup and teardown complete. |
+| `skipped` | Pytest skips setup, the law call, or teardown. |
+| `xfailed` | Pytest treats a failure or an unrun case as expected. |
+| `xpassed` | An expected-failure case passes, including strict XPASS. |
+| `error` | Setup or teardown fails. |
+| `not_run` | Execution stops before all three phases are recorded. |
+
+Only `passed` and `failed` can be completed obligations; finite passes also need
+all required cases checked, and exhaustive passes need exhaustion. A successful check needs
+at least one law, every obligation completed, no refutations, and a successful
+pytest run. Skipped, expected-failure, and unrun laws cannot satisfy this gate.
+The output states how many obligations completed and names every incomplete
+case. Missing or malformed execution evidence also prevents success.
+`--json` retains incomplete execution reports when they contain law obligations;
+the command still exits `2`. Invalid runs with no law accounting do not produce
+a JSON artifact.
+
+Check exits `0` for a successful check, `1` for a refutation with complete
+execution, and `2` for incomplete or invalid execution. A retained refutation
+remains in `failures` and keeps `summary.status` as `failed` even if another
+obligation is incomplete and the command exits `2`. This keeps the observed
+defect separate from the incomplete run.
+
+Replay requires every retained law identity to be collected and every selected
+case to complete. Its successful calls mean the retained exception fingerprints
+matched, rather than that the original laws now pass. A skipped replay cannot
+claim a counterexample was reproduced. The replay result preserves the original
+failure report and adds fresh `obligations`; its exit code describes the current
+replay, while the retained summary describes the original check.
+
+This inventory covers selected, collected laws, not code without laws or laws
+deleted from the source. `tlaw diff` and repository review continue to make
+contract changes visible. Mutation testing uses the same law-obligation and
+typed counterexample machinery inside its isolated execution boundary.
 
 Typed input encoding supports `None`, booleans, integers (without JSON's
 integer-size ambiguity), finite or non-finite floats, strings, bytes, lists,
@@ -596,7 +814,8 @@ observe that copy.
 | `tlaw check feature/` | Discovers every `laws.py` and `*_laws.py` under a folder and checks each. Per-file evidence flags (`--search`, `--json`, `--seed`, `--replay`) are refused in folder mode. | Worst per-file code: `0` only when every file passes, else `1` or `2`. |
 | `tlaw check laws.py --explain` | Adds the inferred-generation explanation before the pytest result. Aliased domains are expanded. | Same as `check`. |
 | `tlaw check laws.py --search [--seed N]` | Uses a fresh visible seed, or reuses `N`, instead of deterministic inferred generation. | Same as `check`. |
-| `tlaw check laws.py --json report.json` | Writes the stable `tlaw.check/v1` report; it composes with `--search`. | Same as `check`, except `2` when a counterexample cannot be retained, because the requested evidence cannot be produced. |
+| `tlaw check laws.py --exhaustive [--max-cases N]` | Enumerates supported finite inputs, with a default limit of 1,000 combinations per law case. Folder mode is supported. | Same as `check`; unsupported or oversized domains exit `2`. |
+| `tlaw check laws.py --json report.json` | Writes the stable `tlaw.check/v1` report; it composes with `--search` or `--exhaustive`. | Same as `check`, except `2` when a counterexample cannot be retained, because the requested evidence cannot be produced. |
 | `tlaw check --replay report.json` | Runs exactly the retained law inputs and no neighboring tests. | `0` when every failure is reproduced exactly, `1` when behavior differs, `2` for invalid evidence. |
 | `tlaw diff BASE..HEAD` | Parses tlaw laws from two Git revisions without executing them and reports the law-space difference. | `0` for no law changes, `1` when law changes are present, `2` for an invalid range or unreadable source. |
 | `tlaw audit audit.py` | Runs one declared baseline and declared known-wrong implementations from a Python `Lawbook`. Legacy TOML manifests also work. | `0` when all declared wrong implementations are rejected, `1` when one survives, `2` for invalid evidence. |
@@ -627,10 +846,25 @@ reports invalid evidence rather than a page of false survivors.
 
 For `mutate`, the law file and implementation file must be different `.py`
 files, and for the flat shape they must share one directory. The
-unmodified baseline must pass first. Its measured duration determines each
-mutant's timeout budget. A law failure, implementation exception, or calibrated
-timeout kills a mutant; every kill is replayed once. Collection failure under
-a mutant is invalid rather than a kill, and a non-reproducing kill is an error.
+unmodified baseline must pass first, with at least one fully executed tlaw law
+and every law obligation passed. Skips, expected failures, missing receipts,
+and ordinary pytest tests alone cannot establish a valid baseline. Its measured
+duration still determines each mutant's timeout budget.
+
+Ordinary mutant runs must complete the same law inventory, including each
+parametrized item. A survivor needs every law passed. An ordinary kill needs
+retained typed inputs for the actual failed laws, followed by exact replay of
+those inputs and exception fingerprints against the same frozen mutant in a
+fresh copy. A neighboring pytest failure or setup/teardown error cannot supply
+that law evidence. An unencodable counterexample remains visible as a
+refutation, but prevents a confirmed ordinary kill. Collection failure under
+a mutant remains invalid rather than a kill.
+
+A calibrated timeout remains a candidate kill and must time out again under
+a freshly recalibrated budget in another fresh copy. An ordinary failure on
+confirmation cannot stand in for the timeout. Missing execution receipts on a timed-out
+process remain unavailable; they are not counted as completed obligations.
+Every unconfirmed candidate is an error.
 The rejecting law is reported as a portable `laws.py::function_name` identity,
 not as a path through tlaw's temporary mutation workspace.
 
@@ -638,8 +872,8 @@ Every kill is rerun once, and it is credited only when the replay returns the
 same evidence rather than the same verdict. Each kill records a kind in the
 report's `kill_kind` field: `observed` when laws reported failures, `timeout`
 when the run exceeded its calibrated budget. A replay must reproduce that same
-kind, and an `observed` kill must name the same laws both times; a mismatch is
-an `error`, never a kill. A `timeout` kill re-measures the baseline
+kind, and an `observed` kill must reproduce each retained law input with the
+same exception fingerprint; a mismatch is an `error`, never a kill. A `timeout` kill re-measures the baseline
 immediately before its replay and is re-timed against a budget recomputed from
 that fresh measurement, so a machine that became busy after the run started
 cannot turn two slow runs into a kill; if the re-measured baseline no longer
@@ -666,6 +900,31 @@ usually because they import an installed package rather than the sibling
 file — and the run reports `INVALID EVIDENCE` with exit code `2` instead of
 listing survivors that would mean nothing. The canary verdict appears in
 both the text report and the JSON `canary` field.
+
+For an ordinary canary result, the same complete inventory and an actual
+captured law failure are required to establish wiring. The canary does not
+need replayable inputs to show the poison was observed. Missing receipts,
+fixture failures, or neighboring pytest failures leave wiring unverified.
+The existing calibrated-timeout canary behavior is preserved.
+
+The additive fields in `tlaw.mutation/v1` expose this evidence:
+
+- `baseline.obligations` and `baseline.evidence_error` account for the baseline;
+- `canary.obligations`, `canary.evidence`, and `canary.evidence_error` describe
+  the wiring observation;
+- each mutation's `evidence` is its `tlaw.check/v1` report, with portable
+  identities, obligations, and retained failures;
+- `replay_evidence` contains fresh replay execution evidence when available;
+- `replay_method` is `exact` or `timeout` when confirmation is attempted, and
+  `null` otherwise; and
+- `replay_exit_code`, `replay_timed_out`, and `replay_duration_seconds` record
+  the physical confirmation attempt, even when no completed receipt exists.
+
+For exact confirmation, a passed fresh replay receipt means the saved failure
+reproduced; it does not mean the original law passed. `replay_method` records
+the attempted method on both successful and unsuccessful confirmations; the
+mutation outcome and note state whether the attempt confirmed a kill.
+Mutation continues to use sampled checks; exhaustive mutation is not added.
 
 The law-first feature workflow built on these guarantees — laws before
 implementation, in a flat mutate-ready folder — is demonstrated end to end

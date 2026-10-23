@@ -11,6 +11,17 @@ and one shared local and CI gate. Static `tlaw diff`, randomized `--search`, sta
 `tlaw.check/v1` reports, repeatable `--seed`, and exact `--replay` are also
 implemented and probed.
 
+Opt-in `--exhaustive` checking now enumerates supported small finite domains.
+Each law obligation distinguishes sampled, exhaustive, and replay evidence;
+only a fully passing enumeration reports exhaustion. See
+[finite checking](current-behavior.md#exhaustive-finite-checking) for supported
+declarations, per-law limits, and the boundary of that claim.
+
+Checks and replays also account for each selected, collected law case through
+setup, call, and teardown. Incomplete execution prevents success while retained
+refutations remain visible. See [law obligations](current-behavior.md#law-obligations)
+for the implemented statuses, report fields, and exit codes.
+
 ## The rule both parts follow
 
 tlaw's position is that a committed law is an accepted law: git is the
@@ -119,7 +130,7 @@ commits, and a top-level historical side effect that must never execute.
 ### Verdict vocabulary
 
 This subsection is a design target, not current `tlaw check` output. Today,
-`check` reports pytest pass or failure for one selected law file, or lists the
+`check` reports per-case law obligations for one selected law file, or lists the
 verdict for every law file discovered under a selected folder. tlaw does not
 yet enumerate code with no laws and therefore cannot report project-wide
 `unknown` behavior.

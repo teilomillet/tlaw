@@ -2,7 +2,8 @@
 
 tlaw lets ordinary Python code state behavior that an implementation must
 continue to satisfy. The law file is executable and is the source of truth;
-Hypothesis generates and shrinks inputs underneath it.
+Hypothesis generates and shrinks inputs underneath it, or an explicit exhaustive
+check enumerates a small finite domain.
 
 For the exact implemented surface and its limits, see
 [current tlaw behavior](https://github.com/teilomillet/tlaw/blob/main/docs/current-behavior.md). Design documents are kept
@@ -20,6 +21,10 @@ law imports your project's own dependencies, tlaw must run in the same
 environment (`uv run tlaw check laws.py`). The standalone tool works for
 self-contained law folders whose implementation needs only the standard
 library.
+
+For a short complete workflow, follow the [check, retain, replay, and mutation
+example](examples/workflow/README.md). It includes a deliberate bug and explains
+the exit codes when replay reproduces a failure and when the code is repaired.
 
 ## What works today
 
@@ -50,6 +55,8 @@ domains, structural comparison, stateful paths, and mutation evidence:
 - `excludes(value, *fragments)` states that no internal detail leaks,
   searching nested structures and reporting where a fragment was found;
 - `tlaw check laws.py --explain` runs the laws and reports what it generated;
+- `tlaw check laws.py --exhaustive` checks every combination of supported finite
+  inputs, with separate counts and completion evidence;
 - `tlaw check feature/` discovers and checks every law file under a folder;
 - `tlaw check laws.py --search --json failure.json` uses a fresh visible seed
   to look for new counterexamples and retains exact replay evidence;
@@ -58,6 +65,8 @@ domains, structural comparison, stateful paths, and mutation evidence:
   surrounding implementation diff without executing either revision;
 - inferred laws use deterministic runs and show Hypothesis's minimized failing
   input;
+- checks account for every selected law case, so skipped, expected-failure,
+  and unrun laws cannot silently pass, and replay requires actual execution;
 - a passing inferred law is rejected when tlaw detects that it mutated its
   generated input;
 - `system`, `call`, `then`, and `same_as` cover explicit stateful paths; and
@@ -186,6 +195,51 @@ A dynamic or otherwise incomparable edit is simply `domain changed`. Exit
 code `0` means no law change, `1` means law changes need review, and `2` means
 the Git range or source could not be read honestly. A rename is intentionally
 reported as one removal and one addition.
+
+## Check every input in a small domain
+
+Declare a bounded domain and opt into enumeration:
+
+```python
+import tlaw
+
+Count = tlaw.integer(0, 3)
+
+
+@tlaw.law
+def boolean_addition_stays_bounded(count: Count, enabled: bool) -> bool:
+    return 0 <= count + enabled <= 4
+```
+
+```console
+tlaw check laws.py --exhaustive --max-cases 1000 --json report.json
+```
+
+This checks all eight combinations. The default limit is 1,000 combinations per
+law case. Supported inputs are `bool`, `None`, `Literal`, `integer`, `one_of`,
+bounded `list_of` over finite elements, and dictionary-form `record` over finite
+independent fields, including aliases and supported `Annotated` forms. Larger
+or unsupported domains are refused before the laws run; tlaw never silently
+switches to sampling.
+
+For example, `tlaw.list_of(tlaw.one_of(["left", "right"]), max_size=4)`
+enumerates all 31 histories of lengths `0..4`, including the empty list. Nested
+finite lists work too. Normal output reports the length bounds beside the
+checked/total case counts; JSON records them in each obligation's `list_bounds`.
+The case cap is checked before lists are generated.
+
+Records compose with lists: a command with two kinds and three amounts has six
+values; histories of those commands with `max_size=2` have 43 cases. Nested
+records retain field names in list-bound paths such as `request.options.flags`
+and `history[].options.flags`. Constructor-based records and dependent fields
+remain sampled-only.
+
+Output and JSON distinguish `exhaustive`, `sampled`, and `replay` evidence. Only
+an exhaustive check that passes every declared combination reports `exhausted`.
+A failure stops that law at its first counterexample, which can be retained and
+replayed with the same commands below. Ordinary checks continue to use Hypothesis;
+mutation remains a separate challenge to the laws. See
+[finite checking](docs/current-behavior.md#exhaustive-finite-checking) for limits.
 
 ## Search and replay a counterexample
 
@@ -347,6 +401,21 @@ git config core.hooksPath .githooks
 
 Local and remote checks share one script instead of maintaining two command
 lists. CI also pins uv, and the gate refuses a stale dependency lock.
+
+The gate also builds the source distribution and wheel, installs the wheel with
+locked runtime dependencies in a fresh environment, and runs the worked example
+outside the checkout. It verifies sampled and exhaustive checks, retained
+counterexample JSON, replay before and after a repair, and a mutation kill
+confirmed by exact replay. Run just this check with
+`uv run python scripts/check_installed.py`. The release workflow uses the same
+check on the exact wheel it uploads.
+
+Tlaw also checks itself through the [self-law suite](selflaws/README.md).
+Four law files exercise replay encoding, comparison, domains, and paths against
+the real core and ten declared known-wrong implementations. Independent pytest
+checks require the intended rejections, detect an always-accepting law checker,
+and exercise exact counterexample replay. The gate runs this evidence alongside
+the existing mutation challenges; it is bounded test evidence, not formal proof.
 `git push --no-verify` skips the local run in an emergency; CI remains the
 enforcement of record. Publishing stays separate: the release workflow is
 gatekept by a version change in `pyproject.toml`.
@@ -541,10 +610,16 @@ Survivors: 1
 ```
 
 The rules are recorded in [generated mutation evidence](https://github.com/teilomillet/tlaw/blob/main/docs/mutation-evidence.md)
-and encoded in `tlaw/mutation.py`: the baseline must pass first; an exception
-or a calibrated timeout under a mutant is a kill; a load failure is invalid,
-never a kill; a kill that does not replay is an error; and every survivor
-stays visible — the statement is never compressed into a percentage.
+and encoded in `tlaw/mutation.py`: the baseline must pass with complete law
+obligations first. Ordinary mutant runs must execute the same law cases, and
+kills must reproduce retained typed inputs and exception fingerprints against
+the same mutant in a fresh copy. Calibrated timeout kills must time out again
+after a fresh passing baseline recalibrates the budget. Missing or incomplete
+evidence is an error; load failures are invalid; every survivor stays visible.
+
+The JSON report retains law obligations, counterexamples, and replay evidence.
+`replay_method` distinguishes `exact` input replay from `timeout` confirmation,
+with the confirmation process's exit code, timeout flag, and duration recorded.
 
 The canary runs by default before anything is scored: a poisoned copy of the
 implementation, in which every function raises, must be rejected by the laws.

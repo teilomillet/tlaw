@@ -35,6 +35,16 @@ def _parser() -> argparse.ArgumentParser:
         help="use a fresh recorded seed to search for new counterexamples",
     )
     check_mode.add_argument(
+        "--exhaustive",
+        action="store_true",
+        help="enumerate every declared finite input combination, without sampling",
+    )
+    check.add_argument(
+        "--max-cases",
+        type=int,
+        help="maximum combinations per exhaustive law (default: 1000)",
+    )
+    check_mode.add_argument(
         "--replay",
         type=Path,
         metavar="REPORT",
@@ -109,6 +119,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return result.exit_code
 
     if args.command == "check":
+        if args.max_cases is not None and (not args.exhaustive or args.max_cases <= 0):
+            print(
+                "tlaw: --max-cases requires --exhaustive and a positive integer",
+                file=sys.stderr,
+            )
+            return 2
         if args.law_file is not None and args.law_file.is_dir():
             # Folder mode discovers and runs every law file; the per-file
             # evidence flags do not apply, so they are refused rather than
@@ -130,7 +146,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 return 2
             try:
-                folder = check_folder(args.law_file, explain=args.explain)
+                folder = check_folder(
+                    args.law_file,
+                    explain=args.explain,
+                    exhaustive=args.exhaustive,
+                    max_cases=args.max_cases,
+                )
             except ManifestError as error:
                 print(f"tlaw: {error}", file=sys.stderr)
                 return 2
@@ -164,6 +185,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     explain=args.explain,
                     search=args.search,
                     seed=args.seed,
+                    exhaustive=args.exhaustive,
+                    max_cases=args.max_cases,
                 )
         except ManifestError as error:
             print(f"tlaw: {error}", file=sys.stderr)
@@ -180,7 +203,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                     file=sys.stderr,
                 )
                 return 2
-            if result.report["summary"]["status"] == "invalid":
+            if (
+                result.report["summary"]["status"] == "invalid"
+                and not result.report["obligations"]
+            ):
                 print(
                     "tlaw: JSON not written because the evidence is not replayable",
                     file=sys.stderr,

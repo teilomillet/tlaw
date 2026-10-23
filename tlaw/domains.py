@@ -69,6 +69,15 @@ from hypothesis import strategies as st
 from hypothesis.strategies import SearchStrategy
 
 
+@dataclass(frozen=True)
+class ListShape:
+    """List declarations retained independently of their sampling strategy."""
+
+    element: Domain | type
+    min_size: int
+    max_size: int | None
+
+
 @dataclass(frozen=True, eq=False)
 class Domain:
     """A declared input domain: a description plus one Hypothesis strategy.
@@ -94,6 +103,14 @@ class Domain:
         repr=False,
         compare=False,
     )
+    # Exact declaration entries, independent of the sampling strategy.
+    finite_values: range | tuple[Any, ...] | None = field(
+        default=None, init=False, repr=False
+    )
+    list_shape: ListShape | None = field(default=None, init=False, repr=False)
+    record_fields: tuple[tuple[str, Domain | type | DependentDomain], ...] | None = (
+        field(default=None, init=False, repr=False)
+    )
 
     def __repr__(self) -> str:
         return self.description
@@ -102,6 +119,21 @@ class Domain:
 def _with_references(domain: Domain, references: Iterable[object]) -> Domain:
     """Attach trusted composition provenance to one new frozen domain."""
     object.__setattr__(domain, "_references", frozenset(references))
+    return domain
+
+
+def _with_finite_metadata(
+    domain: Domain,
+    *,
+    values: range | tuple[Any, ...] | None = None,
+    list_shape: ListShape | None = None,
+    record_fields: tuple[tuple[str, Domain | type | DependentDomain], ...]
+    | None = None,
+) -> Domain:
+    """Retain exact declarations on a newly built trusted domain."""
+    object.__setattr__(domain, "finite_values", values)
+    object.__setattr__(domain, "list_shape", list_shape)
+    object.__setattr__(domain, "record_fields", record_fields)
     return domain
 
 
@@ -285,10 +317,13 @@ def integer(low: int, high: int) -> Domain:
             raise TypeError(f"{name} must be an integer")
     if low > high:
         raise ValueError(f"integer({low!r}, {high!r}) is empty: low exceeds high")
-    return Domain(
-        description=f"integer({low!r}, {high!r})",
-        strategy=st.integers(min_value=low, max_value=high),
-        generates=(int,),
+    return _with_finite_metadata(
+        Domain(
+            description=f"integer({low!r}, {high!r})",
+            strategy=st.integers(min_value=low, max_value=high),
+            generates=(int,),
+        ),
+        values=range(low, high + 1),
     )
 
 
@@ -328,12 +363,15 @@ def one_of(values: Iterable[Any]) -> Domain:
     else:
         head = ", ".join(repr(value) for value in materialized[:4])
         shown = f"{head}, ... ({len(materialized)} values)"
-    return Domain(
-        description=f"one_of({shown})",
-        strategy=st.sampled_from(materialized),
-        # The distinct types of the given values, so a base type that none
-        # of them could satisfy is caught.
-        generates=tuple(dict.fromkeys(type(value) for value in materialized)),
+    return _with_finite_metadata(
+        Domain(
+            description=f"one_of({shown})",
+            strategy=st.sampled_from(materialized),
+            # The distinct types of the given values, so a base type that none
+            # of them could satisfy is caught.
+            generates=tuple(dict.fromkeys(type(value) for value in materialized)),
+        ),
+        values=materialized,
     )
 
 
@@ -619,13 +657,16 @@ def record(constructor: Callable[..., Any] | None = None, /, **fields: Any) -> D
         )
 
     if constructor is None:
-        return _with_references(
-            Domain(
-                description=description,
-                strategy=fields_strategy,
-                generates=(dict,),
+        return _with_finite_metadata(
+            _with_references(
+                Domain(
+                    description=description,
+                    strategy=fields_strategy,
+                    generates=(dict,),
+                ),
+                references,
             ),
-            references,
+            record_fields=tuple(fields.items()),
         )
     return _with_references(
         Domain(
@@ -680,15 +721,18 @@ def list_of(
         described.append(f"min_size={min_size}")
     if max_size is not None:
         described.append(f"max_size={max_size}")
-    return _with_references(
-        Domain(
-            description=f"list_of({', '.join(described)})",
-            strategy=st.lists(
-                element_strategy,
-                min_size=min_size,
-                max_size=max_size,
+    return _with_finite_metadata(
+        _with_references(
+            Domain(
+                description=f"list_of({', '.join(described)})",
+                strategy=st.lists(
+                    element_strategy,
+                    min_size=min_size,
+                    max_size=max_size,
+                ),
+                generates=(list,),
             ),
-            generates=(list,),
+            references,
         ),
-        references,
+        list_shape=ListShape(element, min_size, max_size),
     )

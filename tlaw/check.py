@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import secrets
@@ -13,16 +12,21 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import hypothesis
-
 from .audit import TARGET_ENV, ManifestError
+from .finite import DEFAULT_MAX_CASES, MAX_CASES_ENV
+from .obligations import (
+    OBLIGATIONS_ENV,
+    Obligation,
+    obligations_complete,
+    read_obligations,
+)
 from .replay import (
     CAPTURE_ENV,
     MODE_ENV,
     REPLAY_ENV,
     REPLAY_ROOT_ENV,
-    REPORT_SCHEMA,
     SEED_ENV,
+    build_check_report,
     load_report,
     read_capture,
 )
@@ -66,82 +70,11 @@ def _pytest_command(law_path: Path) -> tuple[str, ...]:
     )
 
 
-def _portable_path(path: Path, *, working_directory: Path) -> str:
-    try:
-        return str(path.relative_to(working_directory))
-    except ValueError:
-        return str(path)
-
-
-def _public_report(
-    law_path: Path,
-    *,
-    working_directory: Path,
-    mode: str,
-    seed: int | None,
-    pytest_exit_code: int,
-    captured: tuple[dict[str, Any], ...],
-) -> dict[str, Any]:
-    portable = _portable_path(law_path, working_directory=working_directory)
-    failures = []
-    for raw in captured:
-        failure = dict(raw)
-        source_path = Path(failure.pop("source_path"))
-        source = (
-            portable
-            if source_path == law_path
-            else _portable_path(source_path, working_directory=working_directory)
-        )
-        failure["source"] = {
-            "path": source,
-            "line": failure.pop("source_line"),
-        }
-        failure["identity"] = f"{source}::{failure['name']}"
-        failures.append(failure)
-    failures.sort(key=lambda failure: failure["identity"])
-
-    # A counterexample that cannot be encoded is a limit of the *evidence*,
-    # never a claim about the code under law: `capture_error` is only ever
-    # "this input type has no safe replay encoding". Reporting the run as
-    # invalid because of it would erase the thing tlaw actually established
-    # — that the law was refuted — so the two facts are kept apart. The
-    # refutation decides `status`; retention is its own field.
-    unretained = [
-        failure["capture_error"]
-        for failure in failures
-        if failure.get("capture_error") is not None
-    ]
-    if pytest_exit_code == 0:
-        status = "passed"
-    elif pytest_exit_code == 1 and failures:
-        status = "failed"
-    else:
-        status = "invalid"
-    return {
-        "schema": REPORT_SCHEMA,
-        "law_file": portable,
-        "law_sha256": hashlib.sha256(law_path.read_bytes()).hexdigest(),
-        "mode": mode,
-        "seed": seed,
-        "hypothesis_version": hypothesis.__version__,
-        "pytest_exit_code": pytest_exit_code,
-        "summary": {
-            "failures": len(failures),
-            "status": status,
-            # False when at least one retained failure has no replayable
-            # inputs. Separate from `status` so "the law was refuted" and
-            # "the counterexample could not be retained" never overwrite
-            # each other.
-            "retained": not unretained,
-        },
-        "failures": failures,
-    }
-
-
 def _environment(*, explain: bool) -> dict[str, str]:
     environment = os.environ.copy()
     environment.pop(TARGET_ENV, None)
     environment.pop("PYTEST_ADDOPTS", None)
+    environment.pop(MAX_CASES_ENV, None)
     environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     if explain:
         environment["TLAW_EXPLAIN"] = "1"
@@ -150,31 +83,78 @@ def _environment(*, explain: bool) -> dict[str, str]:
     return environment
 
 
+def _evidence_line(law: Obligation) -> str:
+    if law.method == "sampled":
+        return f"sampled: {law.nodeid}; total input space not enumerated"
+    bounds = ""
+    if law.list_bounds:
+        lengths = ", ".join(
+            f"{name}={bound['min_size']}..{bound['max_size']}"
+            for name, bound in law.list_bounds.items()
+        )
+        bounds = f"; lengths: {lengths}"
+    outcome = "all declared cases passed" if law.exhausted else "not exhausted"
+    return (
+        f"{law.method}: {law.nodeid}; "
+        f"{law.cases_checked}/{law.cases_total} cases checked{bounds}; {outcome}"
+    )
+
+
+@dataclass(frozen=True)
+class _PytestRun:
+    exit_code: int
+    output: str
+    obligations: tuple[Obligation, ...]
+
+
 def _run_pytest(
     law_path: Path,
     *,
     environment: dict[str, str],
     timeout_seconds: float,
-) -> tuple[int, str]:
-    try:
-        completed = subprocess.run(
-            _pytest_command(law_path),
-            cwd=law_path.parent,
-            env=environment,
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-            check=False,
-        )
-        return completed.returncode, completed.stdout + completed.stderr
-    except subprocess.TimeoutExpired as error:
-        stdout = (
-            error.stdout.decode() if isinstance(error.stdout, bytes) else error.stdout
-        )
-        stderr = (
-            error.stderr.decode() if isinstance(error.stderr, bytes) else error.stderr
-        )
-        return 124, (stdout or "") + (stderr or "") + "\ntlaw: check timed out.\n"
+) -> _PytestRun:
+    with tempfile.TemporaryDirectory(prefix="tlaw-obligations-") as temporary:
+        receipt = Path(temporary) / "obligations.json"
+        environment = {**environment, OBLIGATIONS_ENV: str(receipt)}
+        try:
+            completed = subprocess.run(
+                _pytest_command(law_path),
+                cwd=law_path.parent,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                check=False,
+            )
+            exit_code = completed.returncode
+            output = completed.stdout + completed.stderr
+        except subprocess.TimeoutExpired as error:
+            stdout = (
+                error.stdout.decode()
+                if isinstance(error.stdout, bytes)
+                else error.stdout
+            )
+            stderr = (
+                error.stderr.decode()
+                if isinstance(error.stderr, bytes)
+                else error.stderr
+            )
+            exit_code = 124
+            output = (stdout or "") + (stderr or "") + "\ntlaw: check timed out.\n"
+        try:
+            obligations = read_obligations(receipt)
+        except ManifestError as error:
+            return _PytestRun(exit_code, output + f"\ntlaw: {error}\n", ())
+
+    count = sum(law.completed for law in obligations)
+    output += f"\ntlaw obligations: {count} of {len(obligations)} completed\n"
+    if not obligations:
+        output += "tlaw: no tlaw laws were collected\n"
+    for law in obligations:
+        if not law.completed:
+            output += f"  {law.status}: {law.nodeid}\n"
+        output += f"  {_evidence_line(law)}\n"
+    return _PytestRun(exit_code, output, obligations)
 
 
 def check(
@@ -184,30 +164,45 @@ def check(
     explain: bool = False,
     search: bool = False,
     seed: int | None = None,
+    exhaustive: bool = False,
+    max_cases: int | None = None,
 ) -> CheckResult:
-    """Run one laws.py file and retain any minimized counterexamples.
+    """Run one laws.py file and retain its counterexamples.
 
     Normal inferred generation is deterministic. ``search=True`` chooses a
     fresh random seed unless one is supplied, then records that seed and the
     exact shrunk failure in :meth:`CheckResult.to_json`.
+    ``exhaustive=True`` enumerates supported finite declarations up to
+    ``max_cases`` combinations per law case, defaulting to 1,000.
     """
     law_path = Path(path).resolve()
     if law_path.suffix != ".py" or not law_path.is_file():
         raise ManifestError(f"law file does not exist or is not Python: {law_path}")
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive")
+    if exhaustive and search:
+        raise ValueError("exhaustive checking cannot be combined with search")
+    if max_cases is not None:
+        if not exhaustive:
+            raise ValueError("max_cases requires exhaustive=True")
+        if type(max_cases) is not int or max_cases <= 0:
+            raise ValueError("max_cases must be a positive integer")
     if seed is not None:
         if not search:
             raise ValueError("seed is only meaningful with search=True")
         if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
             raise ValueError("seed must be a non-negative integer")
 
-    mode = "search" if search else "default"
+    mode = "exhaustive" if exhaustive else "search" if search else "default"
     selected_seed = (
         seed if seed is not None else secrets.randbits(64) if search else None
     )
     environment = _environment(explain=explain)
     environment[MODE_ENV] = mode
+    if exhaustive:
+        environment[MAX_CASES_ENV] = str(
+            DEFAULT_MAX_CASES if max_cases is None else max_cases
+        )
     if selected_seed is None:
         environment.pop(SEED_ENV, None)
     else:
@@ -219,21 +214,23 @@ def check(
     with tempfile.TemporaryDirectory(prefix="tlaw-check-") as temporary:
         capture_path = Path(temporary) / "counterexamples.json"
         environment[CAPTURE_ENV] = str(capture_path)
-        pytest_exit_code, output = _run_pytest(
+        run = _run_pytest(
             law_path,
             environment=environment,
             timeout_seconds=timeout_seconds,
         )
         captured = read_capture(capture_path)
 
-    report = _public_report(
+    report = build_check_report(
         law_path,
         working_directory=working_directory,
         mode=mode,
         seed=selected_seed,
-        pytest_exit_code=pytest_exit_code,
+        pytest_exit_code=run.exit_code,
         captured=captured,
+        obligations=run.obligations,
     )
+    output = run.output
     if search:
         output = f"tlaw search seed: {selected_seed}\n{output}"
 
@@ -251,7 +248,9 @@ def check(
         output += "\n"
 
     status = report["summary"]["status"]
-    if status == "passed":
+    if not obligations_complete(run.obligations) or run.exit_code not in (0, 1):
+        exit_code = 2
+    elif status == "passed":
         exit_code = 0
     elif status == "failed":
         exit_code = 1
@@ -290,7 +289,13 @@ class FolderCheckResult:
         lines = [f"tlaw check {self.directory}: {len(self.results)} law file(s)"]
         for result in self.results:
             label = {0: "PASS", 1: "FAIL", 2: "ERROR"}.get(result.exit_code, "ERROR")
-            lines.append(f"  {label}  {result.path}")
+            method = (
+                "exhaustive" if result.report.get("mode") == "exhaustive" else "sampled"
+            )
+            lines.append(f"  {label} [{method}]  {result.path}")
+            if method == "exhaustive":
+                for entry in result.report.get("obligations", ()):
+                    lines.append(f"    {_evidence_line(Obligation(**entry))}")
         passed = sum(result.passed for result in self.results)
         lines.append(f"{passed} of {len(self.results)} law file(s) passed")
         return "\n".join(lines) + "\n"
@@ -325,11 +330,13 @@ def check_folder(
     *,
     timeout_seconds: float = 60.0,
     explain: bool = False,
+    exhaustive: bool = False,
+    max_cases: int | None = None,
 ) -> FolderCheckResult:
     """Discover and check every law file under one directory.
 
-    Only the plain check applies per file: search, replay, and JSON
-    retention are per-file evidence operations and are not folder modes.
+    Sampled or exhaustive checks apply per file; search, replay, and JSON
+    retention remain per-file evidence operations.
     """
     root = Path(directory).resolve()
     if not root.is_dir():
@@ -341,7 +348,13 @@ def check_folder(
             "or a folder that contains law files"
         )
     results = tuple(
-        check(law_file, timeout_seconds=timeout_seconds, explain=explain)
+        check(
+            law_file,
+            timeout_seconds=timeout_seconds,
+            explain=explain,
+            exhaustive=exhaustive,
+            max_cases=max_cases,
+        )
         for law_file in law_files
     )
     return FolderCheckResult(directory=str(root), results=results)
@@ -385,17 +398,22 @@ def replay(
     environment.pop(SEED_ENV, None)
     environment[REPLAY_ENV] = str(path)
     environment[REPLAY_ROOT_ENV] = str(identity_root)
-    pytest_exit_code, output = _run_pytest(
+    run = _run_pytest(
         law_path,
         environment=environment,
         timeout_seconds=timeout_seconds,
     )
-    if pytest_exit_code == 0:
+    output = run.output
+    expected = {failure["identity"] for failure in report["failures"]}
+    observed = {law.identity for law in run.obligations}
+    if not obligations_complete(run.obligations) or expected != observed:
+        exit_code = 2
+    elif run.exit_code == 0:
         count = len(report["failures"])
         noun = "counterexample" if count == 1 else "counterexamples"
         output = f"tlaw replay: {count} retained {noun} reproduced\n{output}"
         exit_code = 0
-    elif pytest_exit_code == 1:
+    elif run.exit_code == 1:
         exit_code = 1
     else:
         exit_code = 2
@@ -403,7 +421,7 @@ def replay(
         path=str(law_path),
         exit_code=exit_code,
         output=output,
-        report=report,
+        report={**report, "obligations": [law.to_dict() for law in run.obligations]},
     )
 
 
