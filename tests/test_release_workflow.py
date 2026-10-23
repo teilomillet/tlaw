@@ -37,9 +37,7 @@ def test_release_attests_the_verified_distributions_before_upload() -> None:
     # files while uploading them; id-token powers both trusted publishing and
     # the attestations.
     assert download < publish
-    assert re.search(
-        r"uses: pypa/gh-action-pypi-publish@[0-9a-f]{40}\b", workflow
-    )
+    assert re.search(r"uses: pypa/gh-action-pypi-publish@[0-9a-f]{40}\b", workflow)
     assert "packages-dir: dist/" in workflow
     assert "attestations: true" in workflow
     assert "skip-existing: true" in workflow
