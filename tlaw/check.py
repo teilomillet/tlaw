@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 import json
-import os
 import secrets
-import subprocess
-import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .audit import TARGET_ENV, ManifestError
+from . import _execution
+from .audit import ManifestError
 from .finite import DEFAULT_MAX_CASES, MAX_CASES_ENV
 from .obligations import (
     OBLIGATIONS_ENV,
@@ -49,39 +47,11 @@ class CheckResult:
         return json.dumps(self.report, indent=2, sort_keys=True) + "\n"
 
 
-def _pytest_command(law_path: Path) -> tuple[str, ...]:
-    return (
-        sys.executable,
-        "-m",
-        "pytest",
-        "-q",
-        "-p",
-        "no:cacheprovider",
-        "-p",
-        "tlaw.pytest_plugin",
-        # The target project's ``addopts`` are cleared, not inherited. tlaw
-        # owns this invocation and disables third-party plugin autoload, so
-        # an inherited flag from a plugin that is now absent (``-n`` from
-        # xdist, for instance) turns every check into a pytest usage error.
-        # Probing a codebase must not require editing that codebase, so the
-        # conflict is resolved here rather than in the target's config.
-        "-o",
-        "addopts=",
-        law_path.name,
-    )
-
-
 def _environment(*, explain: bool) -> dict[str, str]:
-    environment = os.environ.copy()
-    environment.pop(TARGET_ENV, None)
-    environment.pop("PYTEST_ADDOPTS", None)
-    environment.pop(MAX_CASES_ENV, None)
-    environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
-    if explain:
-        environment["TLAW_EXPLAIN"] = "1"
-    else:
-        environment.pop("TLAW_EXPLAIN", None)
-    return environment
+    return _execution.child_environment(
+        clear=_execution.LAW_RUN_CLEARED_ENV,
+        update={"TLAW_EXPLAIN": "1"} if explain else None,
+    )
 
 
 @dataclass(frozen=True)
@@ -98,37 +68,32 @@ def _run_pytest(
     timeout_seconds: float,
 ) -> _PytestRun:
     with tempfile.TemporaryDirectory(prefix="tlaw-obligations-") as temporary:
-        receipt = Path(temporary) / "obligations.json"
-        environment = {**environment, OBLIGATIONS_ENV: str(receipt)}
-        try:
-            completed = subprocess.run(
-                _pytest_command(law_path),
-                cwd=law_path.parent,
-                env=environment,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-                check=False,
-            )
-            exit_code = completed.returncode
-            output = completed.stdout + completed.stderr
-        except subprocess.TimeoutExpired as error:
-            stdout = (
-                error.stdout.decode()
-                if isinstance(error.stdout, bytes)
-                else error.stdout
-            )
-            stderr = (
-                error.stderr.decode()
-                if isinstance(error.stderr, bytes)
-                else error.stderr
-            )
-            exit_code = 124
-            output = (stdout or "") + (stderr or "") + "\ntlaw: check timed out.\n"
+        artifacts = Path(temporary)
+        receipt = artifacts / "obligations.json"
+        environment = {
+            **environment,
+            OBLIGATIONS_ENV: str(receipt),
+            # Hypothesis keeps its example and constants caches under its home
+            # directory, which defaults to the working directory. Only inferred
+            # laws force ``database=None``; explicit-strategy laws keep the
+            # example database enabled, so the home directory itself is what
+            # moves. A check therefore leaves the checked project unmodified
+            # while caching within the run still behaves normally.
+            "HYPOTHESIS_STORAGE_DIRECTORY": str(artifacts / "hypothesis"),
+        }
+        run = _execution.run_pytest(
+            _execution.pytest_argv((law_path.name,)),
+            cwd=law_path.parent,
+            environment=environment,
+            timeout_seconds=timeout_seconds,
+        )
+        output = run.output
+        if run.timed_out:
+            output += "\ntlaw: check timed out.\n"
         try:
             obligations = read_obligations(receipt)
         except ManifestError as error:
-            return _PytestRun(exit_code, output + f"\ntlaw: {error}\n", ())
+            return _PytestRun(run.exit_code, output + f"\ntlaw: {error}\n", ())
 
     count = sum(law.completed for law in obligations)
     output += f"\ntlaw obligations: {count} of {len(obligations)} completed\n"
@@ -138,7 +103,7 @@ def _run_pytest(
         if not law.completed:
             output += f"  {law.status}: {law.nodeid}\n"
         output += f"  {evidence_line(law)}\n"
-    return _PytestRun(exit_code, output, obligations)
+    return _PytestRun(run.exit_code, output, obligations)
 
 
 def check(
