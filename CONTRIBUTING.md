@@ -104,20 +104,48 @@ is not a maintained repository guarantee.
 
 ## Prepare a release
 
-The version remains an explicit human choice. For example, to release 0.0.3:
+The version remains an explicit human choice. A release is published by
+`.github/workflows/release.yml`, which only runs automatically when a push to
+`main` changes the version in `pyproject.toml`.
+
+Before choosing the version, run the no-upload preflight against the current
+tree:
 
 ```console
-uv version 0.0.3
-uv run towncrier build --yes --version 0.0.3
+gh workflow run release.yml
+```
+
+This runs the same lockfile, changelog-format, gate, build, and installed-wheel
+checks the publish path uses, without uploading anything. The publish path
+additionally requires the pending fragments to be compiled and a dated changelog
+heading for the new version. Then prepare the release, for example 0.0.11:
+
+```console
+uv version 0.0.11
+uv run towncrier build --yes --version 0.0.11
 git diff -- CHANGELOG.md changes pyproject.toml uv.lock
 git add pyproject.toml uv.lock CHANGELOG.md changes/
-git commit -m "chore(release): publish tlaw 0.0.3"
+git commit -m "chore(release): publish tlaw 0.0.11"
 git push origin main
 ```
 
 Review the generated changelog before committing it. Towncrier consumes the
-fragments, so the release commit includes their deletions. The PyPI workflow
-refuses to publish when fragments remain or when `CHANGELOG.md` has no entry
-for the version in `pyproject.toml`. It then reruns `./scripts/gate` before
-building any distribution, so publishing cannot succeed while the separate CI
-gate is failing.
+fragments, so the release commit includes their deletions. The workflow refuses
+to publish when fragments remain or when `CHANGELOG.md` has no dated entry for
+the version in `pyproject.toml`. It then reruns `./scripts/gate` before building
+any distribution, so publishing cannot succeed while the separate CI gate is
+failing.
+
+After a successful PyPI upload the workflow creates the annotated tag
+`v<version>` on the release commit and a GitHub Release from that version's
+changelog section, with the verified distributions attached. It also uploads
+PEP 740 provenance attestations for the published files. The tag and release
+are not a second approval step: they are published records of the artifact PyPI
+accepted.
+
+A failed workflow does not require a new version. Fix the cause and rerun the
+failed run with `gh run rerun <run-id>`, or dispatch the current version
+explicitly with `gh workflow run release.yml -f publish=true`. The upload skips
+files PyPI already has, and the tag/release step updates an existing release
+instead of failing. Bump the version only when the artifact itself must
+change; do not amend a version whose files are already on PyPI.

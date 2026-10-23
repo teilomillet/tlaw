@@ -7,6 +7,12 @@ on:
     paths:
       - pyproject.toml
       - .github/workflows/release.yml
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish to PyPI and create the tag/release; false runs the preflight only"
+        type: boolean
+        default: false
 
 concurrency:
   group: publish-tlaw-to-pypi
@@ -17,21 +23,25 @@ permissions:
 
 jobs:
   version:
-    name: Detect a version change
+    name: Detect the release candidate
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       changed: ${{ steps.version.outputs.changed }}
       version: ${{ steps.version.outputs.version }}
+      publish: ${{ steps.version.outputs.publish }}
     steps:
       - name: Check out the complete history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
-      - name: Compare pyproject.toml versions
+      - name: Determine the release candidate and publish decision
         id: version
         env:
           BEFORE: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish || 'false' }}
         run: |
           python3 - <<'PY'
           import os
@@ -54,37 +64,61 @@ jobs:
               return version
 
 
-          before = os.environ["BEFORE"]
           current = project_version(
               Path("pyproject.toml").read_text(encoding="utf-8")
           )
+          event = os.environ["EVENT_NAME"]
 
-          if before == "0" * 40:
+          if event == "workflow_dispatch":
+              # A manual dispatch names the current pyproject version as the
+              # candidate. It is publishable only when the dispatcher asked
+              # for publication; the default is a no-upload preflight.
               previous = None
-          else:
-              result = subprocess.run(
-                  ["git", "show", f"{before}:pyproject.toml"],
-                  check=False,
-                  capture_output=True,
-                  text=True,
+              changed = True
+              publish = (
+                  os.environ.get("DISPATCH_PUBLISH", "").strip().lower() == "true"
               )
-              if result.returncode != 0:
-                  raise SystemExit(
-                      "could not read pyproject.toml from the commit before this "
-                      "push; refusing to guess whether this is a release"
+              decision = (
+                  "manual dispatch: verify the current version"
+                  + (" and publish" if publish else " without publishing")
+              )
+          else:
+              # A push to main releases only when the pyproject version
+              # changed in that push. This stays the ordinary release signal.
+              before = os.environ["BEFORE"]
+              if before == "0" * 40:
+                  previous = None
+              else:
+                  result = subprocess.run(
+                      ["git", "show", f"{before}:pyproject.toml"],
+                      check=False,
+                      capture_output=True,
+                      text=True,
                   )
-              previous = project_version(result.stdout)
+                  if result.returncode != 0:
+                      raise SystemExit(
+                          "could not read pyproject.toml from the commit before "
+                          "this push; refusing to guess whether this is a release"
+                      )
+                  previous = project_version(result.stdout)
+              changed = previous != current
+              publish = True
+              decision = (
+                  "release required"
+                  if changed
+                  else "version unchanged; nothing to publish"
+              )
 
-          changed = previous != current
           old = previous if previous is not None else "(no previous version)"
           print(f"tlaw version: {old} -> {current}")
-          print("release required" if changed else "version unchanged; nothing to publish")
+          print(decision)
 
           with Path(os.environ["GITHUB_OUTPUT"]).open(
               "a", encoding="utf-8"
           ) as output:
               print(f"changed={'true' if changed else 'false'}", file=output)
               print(f"version={current}", file=output)
+              print(f"publish={'true' if publish else 'false'}", file=output)
 
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open(
               "a", encoding="utf-8"
@@ -93,10 +127,7 @@ jobs:
               print(file=summary)
               print(f"`tlaw` version: `{old}` -> `{current}`", file=summary)
               print(file=summary)
-              print(
-                  "A release is required." if changed else "No release is required.",
-                  file=summary,
-              )
+              print(decision, file=summary)
           PY
 
   build:
@@ -104,6 +135,7 @@ jobs:
     needs: version
     if: needs.version.outputs.changed == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - name: Check out the release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -121,7 +153,23 @@ jobs:
       - name: Install the committed dependencies
         run: uv sync --locked
 
-      - name: Verify the changelog was prepared
+      - name: Verify the changelog format
+        run: |
+          uv run python - <<'PY'
+          from pathlib import Path
+
+          changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          marker = "<!-- towncrier release notes start -->"
+          if changelog.count(marker) != 1:
+              raise SystemExit(
+                  "CHANGELOG.md must contain exactly one Towncrier marker"
+              )
+          PY
+
+      - name: Verify the release changelog was prepared
+        # A no-upload preflight may run before the version is chosen, so it
+        # checks the changelog format above but not release-only preparation.
+        if: needs.version.outputs.publish == 'true'
         env:
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
         run: |
@@ -146,11 +194,6 @@ jobs:
               )
 
           changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
-          marker = "<!-- towncrier release notes start -->"
-          if changelog.count(marker) != 1:
-              raise SystemExit(
-                  "CHANGELOG.md must contain exactly one Towncrier marker"
-              )
           version = re.escape(os.environ["RELEASE_VERSION"])
           heading = re.compile(
               rf"^## {version} — \d{{4}}-\d{{2}}-\d{{2}}$",
@@ -189,14 +232,23 @@ jobs:
     needs:
       - version
       - build
-    if: needs.version.outputs.changed == 'true'
+    if: needs.version.outputs.changed == 'true' && needs.version.outputs.publish == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment:
       name: pypi
       url: https://pypi.org/project/tlaw/${{ needs.version.outputs.version }}/
     permissions:
+      # id-token: PyPI trusted publishing and PEP 740 provenance attestations.
+      # contents: the annotated tag and GitHub Release created after the upload.
       id-token: write
+      contents: write
     steps:
+      - name: Check out the release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
@@ -209,5 +261,71 @@ jobs:
           name: tlaw-${{ needs.version.outputs.version }}
           path: dist/
 
+      - name: Check whether the version is already published
+        id: published
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          if curl --fail --silent --show-error \
+              "https://pypi.org/pypi/tlaw/${VERSION}/json" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=PyPI::tlaw ${VERSION} is already on PyPI; skipping the upload."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Attest the verified distributions
+        # PEP 740: generate publish attestations for the exact files that
+        # will be uploaded; uv 0.9.12+ attaches them to the upload.
+        if: steps.published.outputs.exists != 'true'
+        uses: astral-sh/attest-action@39b6ce43875c196a579e31635b11aa2a2036384a # v0.0.7
+        with:
+          paths: dist/*
+
       - name: Publish with PyPI trusted publishing
-        run: uv publish --trusted-publishing always dist/*
+        if: steps.published.outputs.exists != 'true'
+        run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ dist/*
+
+      - name: Tag the release and create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          python3 - "$VERSION" release-notes.md <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+
+          version = sys.argv[1]
+          output = Path(sys.argv[2])
+          changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          pattern = re.compile(
+              rf"^## {re.escape(version)} — .*?$(?P<body>.*?)(?=^## |\Z)",
+              re.MULTILINE | re.DOTALL,
+          )
+          match = pattern.search(changelog)
+          if match is None:
+              raise SystemExit(
+                  f"CHANGELOG.md has no section for version {version}"
+              )
+          body = match.group("body").strip()
+          if not body:
+              raise SystemExit(
+                  f"CHANGELOG.md section for version {version} is empty"
+              )
+          output.write_text(f"# tlaw {version}\n\n{body}\n", encoding="utf-8")
+          PY
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+            echo "::notice title=GitHub Release::Updated existing release ${tag}."
+          else
+            gh release create "$tag" dist/* \
+              --target "$GITHUB_SHA" \
+              --title "tlaw ${VERSION}" \
+              --notes-file release-notes.md
+            echo "::notice title=GitHub Release::Created release ${tag}."
+          fi
