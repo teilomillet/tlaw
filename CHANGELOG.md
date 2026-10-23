@@ -6,6 +6,15 @@ files into this document when the release is prepared.
 
 <!-- towncrier release notes start -->
 
+## 0.0.12 — 2026-10-24
+
+### Added
+
+- Report execution phases, exception types and nested causes in check, replay
+  and mutation diagnostics while preserving existing verdict and confirmation
+  rules.
+
+
 ## 0.0.11 — 2026-10-23
 
 ### Added
