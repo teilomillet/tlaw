@@ -191,6 +191,20 @@ LawResult = Equation[Any] | Comparison | Refusal | Outcome | Exclusion | bool | 
 LawFunction = Callable[..., LawResult]
 
 
+class UnverifiableInputError(TypeError):
+    """tlaw could not establish evidence about a generated input.
+
+    ``@tlaw.law`` deep-copies inferred inputs and compares them after the
+    law runs, so a law that passes while mutating an input can be rejected.
+    When an input cannot be copied, or a copy cannot be compared to prove it
+    unchanged, tlaw cannot state a verdict about the law: the body was not
+    refuted, and the run is invalid evidence rather than a failed law. This
+    is a limit of the harness, not a claim about the code under law, so an
+    execution layer must report it as invalid evidence (``tlaw check`` exits
+    ``2``) and never retain it as a counterexample.
+    """
+
+
 def _copied_value_is_unchanged(before: Any, after: Any) -> bool | None:
     """Compare copied inputs conservatively without guessing array truth values."""
     if before is after:
@@ -241,7 +255,7 @@ def _snapshot_generated_inputs(
         try:
             snapshots[name] = copy.deepcopy(value)
         except Exception as error:
-            raise TypeError(
+            raise UnverifiableInputError(
                 f"law '{description}' received input '{name}' of type "
                 f"{type(value).__name__}, which tlaw could not copy to check for "
                 "mutation; use immutable inputs or the explicit stateful path API"
@@ -265,7 +279,7 @@ def _ensure_generated_inputs_unchanged(
                 "independent values or use the explicit stateful path API"
             )
         if unchanged is None:
-            raise TypeError(
+            raise UnverifiableInputError(
                 f"law '{description}' passed, but tlaw could not verify that "
                 f"input '{name}' of type {type(after).__name__} remained unchanged; "
                 "use immutable inputs or the explicit stateful path API"
@@ -623,26 +637,33 @@ def _spread(
     return run
 
 
-def _decorate_law(
+def _generation_posture(*, inferred: bool, search: bool, exhaustive: bool) -> str:
+    """Name how this run's inputs are generated, for retained evidence."""
+    if exhaustive:
+        return "exhaustive"
+    if search:
+        return (
+            "search-seeded-inferred" if inferred else "search-seeded-explicit-settings"
+        )
+    return "inferred-deterministic" if inferred else "explicit-settings"
+
+
+def _law_check(
     function: LawFunction,
     *,
     description: str,
-    strategies: dict[str, SearchStrategy[Any] | Domain | DependentDomain] | None,
-) -> Callable[[], None]:
-    inferred = strategies is None
-    search = os.environ.get(MODE_ENV) == "search"
-    exhaustive = os.environ.get(MODE_ENV) == "exhaustive"
-    replaying = bool(os.environ.get(REPLAY_ENV))
-    failures = replay_failures(function) if replaying else ()
-    progress = CaseProgress("sampled")
-    if exhaustive:
-        generation = "exhaustive"
-    elif search:
-        generation = (
-            "search-seeded-inferred" if inferred else "search-seeded-explicit-settings"
-        )
-    else:
-        generation = "inferred-deterministic" if inferred else "explicit-settings"
+    inferred: bool,
+    exhaustive: bool,
+    generation: str,
+) -> Callable[..., None]:
+    """Wrap one law body in the checks every generation posture shares.
+
+    The wrapper binds the arguments the law actually received, rejects an
+    ambiguous return value, verifies that inferred generated inputs were not
+    mutated, and — when evidence capture is active — retains the final
+    shrunk counterexample for replay. ``generation`` names in that retained
+    report how the inputs were produced.
+    """
 
     @wraps(function)
     def check(*args: Any, **kwargs: Any) -> None:
@@ -702,6 +723,11 @@ def _decorate_law(
                     "exhaustive checks cannot discard inputs with assume() or reject()"
                 ) from error
             raise
+        except UnverifiableInputError:
+            # A limit of the harness is not evidence about the code under
+            # law: never retain it as a counterexample, so ``tlaw check``
+            # reports invalid evidence instead of a refutation.
+            raise
         except Exception as error:
             capture_failure(
                 function,
@@ -714,164 +740,268 @@ def _decorate_law(
             )
             raise
 
-    if replaying:
-        if not failures:
-            # Replay means exactly the retained failures, not every law or
-            # ordinary pytest test that happens to share the file.
-            def ignored() -> None:
-                return None
+    return check
 
-            ignored.__name__ = function.__name__
-            ignored.__test__ = False
-            return ignored
 
-        def replay_test() -> None:
-            progress.cases_checked = 0
-            for index, failure in enumerate(failures, start=1):
-                progress.cases_checked += 1
-                label = (
-                    "retained counterexample"
-                    if len(failures) == 1
-                    else f"retained counterexample {index}"
-                )
-                positional, keywords = decoded_arguments(function, failure)
-                expected = failure["exception"]
-                try:
-                    check(*positional, **keywords)
-                except Exception as error:
-                    actual = exception_evidence(error)
-                    if actual == expected:
-                        continue
-                    raise AssertionError(
-                        f"{label} changed its failure:\n"
-                        f"  expected {expected['type']}: {expected['message']}\n"
-                        f"  observed {actual['type']}: {actual['message']}"
-                    ) from error
-                raise AssertionError(f"{label} no longer fails")
+def _replay_law(
+    function: LawFunction,
+    check: Callable[..., None],
+    failures: tuple[dict[str, Any], ...],
+    *,
+    description: str,
+) -> Callable[[], None]:
+    """Collect one test that reruns exactly this law's retained failures."""
+    if not failures:
+        # Replay means exactly the retained failures, not every law or
+        # ordinary pytest test that happens to share the file.
+        def ignored() -> None:
+            return None
 
-        replay_test.__name__ = function.__name__
-        replay_test.__doc__ = function.__doc__
-        replay_test.__test__ = True
-        replay_test.pytestmark = [
-            mark
-            for mark in getattr(function, "pytestmark", ())
-            if mark.name != "parametrize"
-        ]
-        replay_test.__tlaw_description__ = description
-        replay_test.__tlaw_replay_identity__ = failures[0]["identity"]
-        progress = CaseProgress("replay", 0, len(failures))
-        replay_test.__tlaw_progress__ = progress
-        return replay_test
+        ignored.__name__ = function.__name__
+        ignored.__test__ = False
+        return ignored
 
-    if exhaustive:
-        signature = inspect.signature(function)
-        if any(
-            parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD)
-            for parameter in signature.parameters.values()
-        ):
-            raise TypeError("exhaustive laws do not support variadic parameters")
-        if inferred:
-            specifications = inspect.get_annotations(function, eval_str=True)
-            specifications = {
-                name: specifications.get(name, inspect.Parameter.empty)
-                for name in signature.parameters
-            }
-        else:
-            specifications = dict(strategies)
-            if not specifications.keys() <= signature.parameters.keys():
-                raise TypeError("exhaustive domains must name law parameters")
-        for name, annotation in specifications.items():
-            annotation = _unwrap_alias(annotation)
-            if get_origin(annotation) is Annotated:
-                # Reuse the existing metadata and base/domain compatibility checks.
-                _domain_strategy(annotation, description=description, parameter=name)
-                annotation = get_args(annotation)[1]
-            specifications[name] = annotation
-        limit = int(os.environ.get(MAX_CASES_ENV, DEFAULT_MAX_CASES))
-        plan = finite_plan(specifications, limit=limit)
-        progress = CaseProgress(
-            "exhaustive", 0, plan.total, list_bounds=plan.list_bounds
-        )
+    progress = CaseProgress("replay", 0, len(failures))
 
-        @wraps(function)
-        def exhaustive_test(**fixtures: Any) -> None:
-            progress.cases_checked = 0
-            progress.exhausted = False
-            for generated in plan.arguments():
-                arguments = {**fixtures, **generated}
-                positional = tuple(
-                    arguments.pop(name)
-                    for name, parameter in signature.parameters.items()
-                    if parameter.kind is parameter.POSITIONAL_ONLY
-                )
-                bound = signature.bind(*positional, **arguments)
-                bound.apply_defaults()
-                progress.cases_checked += 1
-                check(*bound.args, **bound.kwargs)
-            progress.exhausted = True
+    def replay_test() -> None:
+        progress.cases_checked = 0
+        for index, failure in enumerate(failures, start=1):
+            progress.cases_checked += 1
+            label = (
+                "retained counterexample"
+                if len(failures) == 1
+                else f"retained counterexample {index}"
+            )
+            positional, keywords = decoded_arguments(function, failure)
+            expected = failure["exception"]
+            try:
+                check(*positional, **keywords)
+            except Exception as error:
+                actual = exception_evidence(error)
+                if actual == expected:
+                    continue
+                raise AssertionError(
+                    f"{label} changed its failure:\n"
+                    f"  expected {expected['type']}: {expected['message']}\n"
+                    f"  observed {actual['type']}: {actual['message']}"
+                ) from error
+            raise AssertionError(f"{label} no longer fails")
 
-        exhaustive_test.__name__ = function.__name__
-        exhaustive_test.__doc__ = function.__doc__
-        exhaustive_test.__signature__ = signature.replace(
-            parameters=[
-                parameter
-                for name, parameter in signature.parameters.items()
-                if name not in specifications
-            ]
-        )
-        hypothesis_test = exhaustive_test
-        inputs = (
-            _annotation_text(function)
-            if inferred
-            else tuple(f"{name}: {value!r}" for name, value in strategies.items())
-        )
-    elif inferred:
-        resolved = _domain_strategies(function, description=description)
-        if resolved is None:
-            hypothesis_test = given(...)(check)
-        elif any(isinstance(value, DependentDomain) for value in resolved.values()):
-            hypothesis_test = given(
-                _tlaw_generated=_ordered_inputs(resolved, description=description)
-            )(_spread(check, function))
-        else:
-            hypothesis_test = given(**resolved)(check)
-        hypothesis_test = settings(
-            database=None,
-            derandomize=not search,
-            max_examples=INFERRED_MAX_EXAMPLES,
-        )(hypothesis_test)
-        inputs = _annotation_text(function)
+    replay_test.__name__ = function.__name__
+    replay_test.__doc__ = function.__doc__
+    replay_test.__test__ = True
+    replay_test.pytestmark = [
+        mark
+        for mark in getattr(function, "pytestmark", ())
+        if mark.name != "parametrize"
+    ]
+    replay_test.__tlaw_description__ = description
+    replay_test.__tlaw_replay_identity__ = failures[0]["identity"]
+    replay_test.__tlaw_progress__ = progress
+    return replay_test
+
+
+def _exhaustive_law(
+    function: LawFunction,
+    check: Callable[..., None],
+    *,
+    description: str,
+    strategies: dict[str, SearchStrategy[Any] | Domain | DependentDomain] | None,
+    inferred: bool,
+) -> tuple[Callable[[], None], tuple[str, ...], CaseProgress]:
+    """Collect one test that enumerates this law's declared finite inputs."""
+    signature = inspect.signature(function)
+    if any(
+        parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD)
+        for parameter in signature.parameters.values()
+    ):
+        raise TypeError("exhaustive laws do not support variadic parameters")
+    if inferred:
+        specifications = inspect.get_annotations(function, eval_str=True)
+        specifications = {
+            name: specifications.get(name, inspect.Parameter.empty)
+            for name in signature.parameters
+        }
     else:
-        # The explicit form deliberately keeps ordinary Hypothesis
-        # semantics — no forced settings, because authors stack their own
-        # ``@settings`` on top and Hypothesis rejects a second
-        # application. That difference in posture must be visible, not
-        # silent (kvfit probe, bottleneck 2), so the inputs are recorded
-        # here — domain descriptions before compilation, strategy reprs
-        # otherwise — and ``--explain`` states the posture.
-        inputs = tuple(f"{name}: {value!r}" for name, value in strategies.items())
+        specifications = dict(strategies)
+        if not specifications.keys() <= signature.parameters.keys():
+            raise TypeError("exhaustive domains must name law parameters")
+    for name, annotation in specifications.items():
+        annotation = _unwrap_alias(annotation)
+        if get_origin(annotation) is Annotated:
+            # Reuse the existing metadata and base/domain compatibility checks.
+            _domain_strategy(annotation, description=description, parameter=name)
+            annotation = get_args(annotation)[1]
+        specifications[name] = annotation
+    limit = int(os.environ.get(MAX_CASES_ENV, DEFAULT_MAX_CASES))
+    plan = finite_plan(specifications, limit=limit)
+    progress = CaseProgress("exhaustive", 0, plan.total, list_bounds=plan.list_bounds)
+
+    @wraps(function)
+    def exhaustive_test(**fixtures: Any) -> None:
+        progress.cases_checked = 0
+        progress.exhausted = False
+        for generated in plan.arguments():
+            arguments = {**fixtures, **generated}
+            positional = tuple(
+                arguments.pop(name)
+                for name, parameter in signature.parameters.items()
+                if parameter.kind is parameter.POSITIONAL_ONLY
+            )
+            bound = signature.bind(*positional, **arguments)
+            bound.apply_defaults()
+            progress.cases_checked += 1
+            check(*bound.args, **bound.kwargs)
+        progress.exhausted = True
+
+    exhaustive_test.__name__ = function.__name__
+    exhaustive_test.__doc__ = function.__doc__
+    exhaustive_test.__signature__ = signature.replace(
+        parameters=[
+            parameter
+            for name, parameter in signature.parameters.items()
+            if name not in specifications
+        ]
+    )
+    inputs = (
+        _annotation_text(function)
+        if inferred
+        else tuple(f"{name}: {value!r}" for name, value in strategies.items())
+    )
+    return exhaustive_test, inputs, progress
+
+
+def _inferred_law(
+    function: LawFunction,
+    check: Callable[..., None],
+    *,
+    description: str,
+    search: bool,
+) -> tuple[Callable[[], None], tuple[str, ...], CaseProgress]:
+    """Collect one deterministic or search-seeded Hypothesis test."""
+    resolved = _domain_strategies(function, description=description)
+    if resolved is None:
+        hypothesis_test = given(...)(check)
+    elif any(isinstance(value, DependentDomain) for value in resolved.values()):
         hypothesis_test = given(
-            **{
-                name: value.strategy if isinstance(value, Domain) else value
-                for name, value in strategies.items()
-            }
-        )(check)
+            _tlaw_generated=_ordered_inputs(resolved, description=description)
+        )(_spread(check, function))
+    else:
+        hypothesis_test = given(**resolved)(check)
+    hypothesis_test = settings(
+        database=None,
+        derandomize=not search,
+        max_examples=INFERRED_MAX_EXAMPLES,
+    )(hypothesis_test)
+    return hypothesis_test, _annotation_text(function), CaseProgress("sampled")
+
+
+def _explicit_law(
+    function: LawFunction,
+    check: Callable[..., None],
+    *,
+    strategies: dict[str, SearchStrategy[Any] | Domain | DependentDomain],
+) -> tuple[Callable[[], None], tuple[str, ...], CaseProgress]:
+    """Collect one test using the strategies the author wrote explicitly.
+
+    The explicit form deliberately keeps ordinary Hypothesis semantics — no
+    forced settings, because authors stack their own ``@settings`` on top
+    and Hypothesis rejects a second application. That difference in posture
+    must be visible, not silent (kvfit probe, bottleneck 2), so the inputs
+    are recorded here — domain descriptions before compilation, strategy
+    reprs otherwise — and ``--explain`` states the posture.
+    """
+    inputs = tuple(f"{name}: {value!r}" for name, value in strategies.items())
+    hypothesis_test = given(
+        **{
+            name: value.strategy if isinstance(value, Domain) else value
+            for name, value in strategies.items()
+        }
+    )(check)
+    return hypothesis_test, inputs, CaseProgress("sampled")
+
+
+def _install_test(
+    function: LawFunction,
+    test: Callable[[], None],
+    *,
+    description: str,
+    inputs: tuple[str, ...],
+    inferred: bool,
+    search: bool,
+    progress: CaseProgress,
+) -> Callable[[], None]:
+    """Apply the search seed and attach the metadata pytest and reports read."""
     if search:
         seed = os.environ.get(SEED_ENV)
         if seed is None:
             raise RuntimeError("tlaw search has no seed")
-        hypothesis_test = hypothesis_seed(int(seed))(hypothesis_test)
-    hypothesis_test.__test__ = True
-    hypothesis_test.__tlaw_description__ = description
+        test = hypothesis_seed(int(seed))(test)
+    test.__test__ = True
+    test.__tlaw_description__ = description
     source = inspect.getsourcefile(function) or inspect.getfile(function)
-    hypothesis_test.__tlaw_identity__ = (
-        f"{FilePath(source).resolve()}::{function.__name__}"
+    test.__tlaw_identity__ = f"{FilePath(source).resolve()}::{function.__name__}"
+    test.__tlaw_inputs__ = inputs
+    test.__tlaw_max_examples__ = INFERRED_MAX_EXAMPLES if inferred else None
+    test.__tlaw_deterministic__ = inferred and not search
+    test.__tlaw_progress__ = progress
+    return test
+
+
+def _decorate_law(
+    function: LawFunction,
+    *,
+    description: str,
+    strategies: dict[str, SearchStrategy[Any] | Domain | DependentDomain] | None,
+) -> Callable[[], None]:
+    """Choose the law's generation posture and build its pytest test."""
+    inferred = strategies is None
+    search = os.environ.get(MODE_ENV) == "search"
+    exhaustive = os.environ.get(MODE_ENV) == "exhaustive"
+    replaying = bool(os.environ.get(REPLAY_ENV))
+    failures = replay_failures(function) if replaying else ()
+    generation = _generation_posture(
+        inferred=inferred, search=search, exhaustive=exhaustive
     )
-    hypothesis_test.__tlaw_inputs__ = inputs
-    hypothesis_test.__tlaw_max_examples__ = INFERRED_MAX_EXAMPLES if inferred else None
-    hypothesis_test.__tlaw_deterministic__ = inferred and not search
-    hypothesis_test.__tlaw_progress__ = progress
-    return hypothesis_test
+    check = _law_check(
+        function,
+        description=description,
+        inferred=inferred,
+        exhaustive=exhaustive,
+        generation=generation,
+    )
+    if replaying:
+        return _replay_law(function, check, failures, description=description)
+    if exhaustive:
+        test, inputs, progress = _exhaustive_law(
+            function,
+            check,
+            description=description,
+            strategies=strategies,
+            inferred=inferred,
+        )
+    elif inferred:
+        test, inputs, progress = _inferred_law(
+            function,
+            check,
+            description=description,
+            search=search,
+        )
+    else:
+        test, inputs, progress = _explicit_law(
+            function,
+            check,
+            strategies=strategies,
+        )
+    return _install_test(
+        function,
+        test,
+        description=description,
+        inputs=inputs,
+        inferred=inferred,
+        search=search,
+        progress=progress,
+    )
 
 
 @overload
