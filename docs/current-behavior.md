@@ -965,7 +965,7 @@ untouched candidates `not-run`. A candidate whose confirmation cannot run is
 an `error`, with its original observation retained but no credited kill. Failed
 baseline or canary prerequisites also leave candidates `not-run`.
 
-JSON `plan` records full-campaign estimates conditional on passing prerequisites;
+JSON `plan` records selected-campaign estimates conditional on passing prerequisites;
 sampled input totals remain `null`. `work` records the run cap, started and
 remaining invocations, and `stopped_before`. `summary.not_run` and
 `summary.complete` expose work left unrun and whether a campaign completed.
@@ -973,6 +973,23 @@ Plans always have `complete: false`. Unrun candidates stay outside the runnable
 denominator, and an unrun equivalence declaration is unverified rather than
 contradicted. See [planning and budgets](mutation-evidence.md#campaign-planning-and-run-budgets)
 for the counting rules.
+
+Use repeatable `--mutant ID` or Python `mutant_ids=[...]` to rerun exact
+generated IDs in the current source. IDs must match in full; an empty or
+unknown selection is rejected before child execution. Duplicate requests run
+once in generation order. Each invocation gathers fresh isolated baseline,
+canary and confirmation evidence under the existing budget and timeout rules.
+
+Reports retain the whole inventory. Unselected entries are `excluded`, with
+no execution evidence; `not-run` counts only selected mutants left untouched.
+JSON mutation rows include `selected`, and summaries report `selected`,
+`excluded`, `not_run`, `selection_complete` and whole-inventory `complete`.
+Selected success can exit `0` with `selection_complete: true` while
+`complete: false`; finishing a selection does not finish the full campaign.
+Run/case estimates and strength denominators cover only the selection.
+Excluded ledger entries remain unverified, while absent IDs remain stale.
+This reruns a current mutation, without restoring historical source or
+reusing evidence. See [exact mutant-ID reruns](mutation-evidence.md#exact-mutant-id-reruns).
 
 The law-first feature workflow built on these guarantees — laws before
 implementation, in a flat mutate-ready folder — is demonstrated end to end

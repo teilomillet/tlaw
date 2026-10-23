@@ -87,6 +87,13 @@ def _parser() -> argparse.ArgumentParser:
     mutate.add_argument("law_file", type=Path)
     mutate.add_argument("implementation", type=Path)
     mutate.add_argument(
+        "--mutant",
+        dest="mutant_ids",
+        action="append",
+        metavar="ID",
+        help="select an exact generated mutant ID; repeat to select more than one",
+    )
+    mutate.add_argument(
         "--plan",
         action="store_true",
         help="run one baseline and report planned work without canary or mutant runs",
@@ -261,6 +268,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 equivalents=args.equivalents,
                 plan_only=args.plan,
                 max_runs=args.max_runs,
+                mutant_ids=args.mutant_ids,
                 exhaustive=args.exhaustive,
                 max_cases=args.max_cases,
             )
@@ -278,7 +286,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Exit-code contract, mirroring `tlaw audit`: 2 means the evidence
         # is invalid or incomplete (including a run-budget stop), 1 means
         # unexplained survivors remain — a prompt for investigation, not
-        # proof the laws are weak — and 0 means every runnable mutant was
+        # proof the laws are weak — and 0 means every runnable selected mutant was
         # killed or is a committed unresolved-equivalent candidate.
         if result.has_errors:
             return 2

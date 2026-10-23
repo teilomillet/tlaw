@@ -18,6 +18,8 @@ def planned_report() -> dict:
         "plan_only": True,
         "plan": {
             "generated_mutations": 1,
+            "selected_mutations": 1,
+            "excluded_mutations": 0,
             "runnable_mutations": 1,
             "law_cases": 1,
             "cases_per_run": 3,

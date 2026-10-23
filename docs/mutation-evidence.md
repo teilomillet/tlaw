@@ -139,9 +139,11 @@ A valid requested plan exits `0`, but reports `complete: false` and establishes
 no mutation evidence. An invalid baseline or no generated challenges still
 exits `2`.
 
-The plan counts generated and compiling mutants and reports the full campaign's
-isolated-run range. For `R` compiling mutants and at least one generated
-challenge, that range is `2 + R` through `2 + 3R`: one baseline and one canary,
+The plan counts generated, selected, excluded and compiling selected mutants
+and reports the selected campaign's isolated-run range. With no ID selection,
+all generated mutants are selected. For `R` compiling selected mutants and at
+least one selected challenge, that range is `2 + R` through `2 + 3R`: one
+baseline and one canary,
 then one invocation per survivor, two per observed kill including exact replay,
 or three per timeout kill including its fresh baseline and retry. These
 estimates assume the baseline and canary pass their prerequisites. Syntax-invalid
@@ -182,6 +184,45 @@ and mutant ID. `summary.not_run` counts untouched candidates and
 execution. Text reports the same information and lists every unrun mutant.
 An unrun equivalence declaration remains unverified, not contradicted or a
 substitute for execution.
+
+### Exact mutant-ID reruns
+
+Copy exact IDs from the text or JSON mutation inventory, then select them:
+
+```console
+tlaw mutate laws.py implementation.py --mutant ID --max-runs 20 --json selected.json
+```
+
+Replace `ID` with an ID from the current inventory; repeat `--mutant ID` to
+select more than one. The Python API accepts `mutant_ids=[first_id, second_id]`.
+Omitting selection runs the full inventory. Empty selections, unknown IDs and
+prefixes are rejected before any isolated child starts; the CLI returns `2`.
+Repeated IDs run once, in generation order regardless of request order.
+
+A rerun uses the current source, laws and environment. IDs identify generated
+mutation sites, not a complete historical program or campaign. Every invocation
+establishes a fresh baseline and canary, recalibrates deadlines, and confirms
+kills through the existing exact replay or fresh timeout baseline and retry.
+No prior result is reused. `--plan`, exhaustive checking and the shared run
+budget apply to the selected scope.
+
+Every generated mutant remains in `mutations`, with a `selected` flag.
+Excluded mutants have outcome `excluded`; they are neither compiled nor run
+and carry no execution or replay evidence. `not-run` identifies selected
+mutants left untouched by planning, a failed prerequisite or a budget stop.
+An executed candidate whose confirmation is blocked remains an `error`.
+Excluded and unrun mutants stay outside the runnable denominator, and their
+equivalence declarations remain unverified rather than stale. Ledger IDs
+absent from the generated inventory are still stale.
+
+Text and JSON report selected, excluded and unrun counts. JSON
+`summary.selection_complete` means the selected campaign finished;
+`summary.complete` additionally requires no excluded mutants. A successful
+selection can therefore exit `0` with `selection_complete: true` and
+`complete: false`. Survivors still return `1`; invalid or incomplete evidence
+returns `2`. Plans have both completion flags false. Strength statements and
+planned run/case bounds describe only the selection when any mutants are
+excluded; full inventory counts remain visible in the plan.
 
 An exception and an infinite loop are behavior, not infrastructure: only a
 timeout with no measured baseline to calibrate it would be an error, and the

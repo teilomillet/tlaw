@@ -162,6 +162,8 @@ def verify_campaign_budget(
         report.get("plan")
         == {
             "generated_mutations": 1,
+            "selected_mutations": 1,
+            "excluded_mutations": 0,
             "runnable_mutations": 1,
             "law_cases": 1,
             "cases_per_run": 3,
@@ -265,6 +267,120 @@ def verify_campaign_budget(
         )
 
 
+def verify_selection_campaign(
+    report: dict,
+    *,
+    inventory: tuple[str, ...],
+    selected_id: str,
+    complete: bool,
+) -> None:
+    """Verify one selected mutant without losing the full generated inventory."""
+    require(report["schema"] == "tlaw.mutation/v1", "missing selection evidence")
+    require(
+        report.get("method") == "exhaustive" and report.get("max_cases") == 3,
+        "selection does not use the requested finite domain",
+    )
+    require(
+        len(inventory) == len(set(inventory)) == 2 and selected_id in inventory,
+        "selection fixture requires two distinct current IDs",
+    )
+    mutations = report["mutations"]
+    require(
+        tuple(mutant["id"] for mutant in mutations) == inventory,
+        "selection changed the generated inventory or order",
+    )
+    [selected] = [mutant for mutant in mutations if mutant["id"] == selected_id]
+    [excluded] = [mutant for mutant in mutations if mutant["id"] != selected_id]
+    require(
+        selected.get("selected") is True
+        and excluded.get("selected") is False
+        and excluded["outcome"] == "excluded",
+        "selection flags or excluded outcome are incorrect",
+    )
+    for mutant in [excluded] if complete else mutations:
+        require(
+            mutant["exit_code"] is None
+            and mutant["timed_out"] is False
+            and mutant["duration_seconds"] == 0
+            and mutant["kill_kind"] is None
+            and mutant["failed_tests"] == []
+            and mutant["evidence"] == mutant["replay_evidence"] == {}
+            and all(
+                mutant[field] is None
+                for field in (
+                    "replay_method",
+                    "replay_exit_code",
+                    "replay_timed_out",
+                    "replay_duration_seconds",
+                )
+            ),
+            "untouched mutant claims execution or confirmation evidence",
+        )
+    require(
+        report.get("plan")
+        == {
+            "generated_mutations": 2,
+            "selected_mutations": 1,
+            "excluded_mutations": 1,
+            "runnable_mutations": 1,
+            "law_cases": 1,
+            "cases_per_run": 3,
+            "min_runs": 3,
+            "max_runs": 5,
+            "max_case_attempts": 15,
+        },
+        "selection plan does not describe the requested scope",
+    )
+    limit = 4 if complete else 2
+    require(
+        report.get("work")
+        == {
+            "max_runs": limit,
+            "runs_started": limit,
+            "runs_remaining": 0,
+            "stopped_before": None if complete else f"mutant {selected_id}",
+        },
+        "selection run accounting does not preserve the budget",
+    )
+    summary = report["summary"]
+    require(
+        summary.get("generated") == 2
+        and summary.get("selected") == summary.get("excluded") == 1
+        and summary.get("not_run") == (0 if complete else 1)
+        and summary.get("selection_complete") is complete
+        and summary.get("complete") is False
+        and summary.get("has_errors") is (not complete)
+        and summary["killed"] == summary["runnable"] == int(complete)
+        and summary["survived"] == summary["unresolved_equivalent"] == 0
+        and summary["invalid"] == summary["errors"] == 0,
+        "selection summary confuses selected, excluded or unrun work",
+    )
+    require(report.get("plan_only") is False, "selection unexpectedly only planned")
+    require(report["baseline"]["valid"] is True, "selection baseline is invalid")
+    require(
+        report["canary"]["wired"] is True
+        and report["canary"]["exit_code"] == 1
+        and report["canary"]["timed_out"] is False,
+        "selection did not preserve its fresh canary",
+    )
+    for label, status, count in (("baseline", "passed", 3), ("canary", "failed", 1)):
+        [obligation] = report[label]["obligations"]
+        require(
+            obligation["identity"] == LAW
+            and obligation["method"] == "exhaustive"
+            and obligation["status"] == status
+            and obligation["cases_checked"] == count
+            and obligation["cases_total"] == 3
+            and obligation["exhausted"] is (status == "passed")
+            and obligation["list_bounds"] == {},
+            f"selection lost its {label} exhaustive evidence",
+        )
+    if complete:
+        verify_mutation({**report, "mutations": [selected]}, method="exhaustive")
+    else:
+        require(selected["outcome"] == "not-run", "selected mutant unexpectedly ran")
+
+
 def exercise(cli: Path, project: Path, environment: dict[str, str]) -> None:
     def tlaw(*arguments: str, expected_exit: int = 0) -> str:
         return run(
@@ -353,16 +469,62 @@ def exercise(cli: Path, project: Path, environment: dict[str, str]) -> None:
         "--json",
         "mutation-exhaustive.json",
     )
-    verify_campaign_budget(
-        json.loads((project / "mutation-exhaustive.json").read_text(encoding="utf-8")),
-        stage="complete",
+    exhaustive_mutation = json.loads(
+        (project / "mutation-exhaustive.json").read_text(encoding="utf-8")
     )
+    verify_campaign_budget(exhaustive_mutation, stage="complete")
+    selected_id = exhaustive_mutation["mutations"][0]["id"]
+    # An unrelated function adds an excluded mutant while preserving the chosen ID.
+    implementation.write_bytes(
+        original + b"\n\ndef decrement(value: int) -> int:\n    return value - 1\n"
+    )
+    try:
+        tlaw(
+            "mutate",
+            "laws.py",
+            "implementation.py",
+            "--plan",
+            "--json",
+            "inventory.json",
+        )
+        inventory_report = json.loads(
+            (project / "inventory.json").read_text(encoding="utf-8")
+        )
+        inventory = tuple(mutant["id"] for mutant in inventory_report["mutations"])
+        for complete, limit in ((False, 2), (True, 4)):
+            name = f"selection-{limit}.json"
+            tlaw(
+                "mutate",
+                "laws.py",
+                "implementation.py",
+                "--mutant",
+                selected_id,
+                "--mutant",
+                selected_id,
+                "--exhaustive",
+                "--max-cases",
+                "3",
+                "--max-runs",
+                str(limit),
+                "--json",
+                name,
+                expected_exit=0 if complete else 2,
+            )
+            verify_selection_campaign(
+                json.loads((project / name).read_text(encoding="utf-8")),
+                inventory=inventory,
+                selected_id=selected_id,
+                complete=complete,
+            )
+    finally:
+        implementation.write_bytes(original)
     print("installed gate: sampled, exhaustive 3/3, counterexample JSON, replay,")
     print(
         "installed gate: repaired replay rejected; sampled and exhaustive mutation "
         "with canary and exact replay passed"
     )
     print("installed gate: baseline-only plan and guarded confirmation budget passed")
+    print("installed gate: exact ID selection preserves excluded and unrun outcomes")
 
 
 def main() -> None:

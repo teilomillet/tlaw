@@ -81,6 +81,12 @@ baseline and inspect the campaign's planned work. Add `--max-runs 20` to cap all
 isolated pytest invocations, including the canary and confirmations; reports
 explicitly identify budget stops, unconfirmed candidates and mutations left unrun.
 
+To rerun specific challenges, copy their IDs from a report and pass
+`--mutant ID` (repeat for more IDs), or `mutant_ids=[...]` in Python. Each
+invocation gathers fresh baseline, canary and confirmation evidence. Reports
+separate selected, excluded and unrun mutants; completing a selection does
+not claim completion of the full generated campaign.
+
 Important pieces are still intentionally absent: domain predicates and nested
 domain positions beyond the implemented `number`, `integer`, `list_of`,
 `one_of`, `recursive`, `record`, `depends`, and supported `Annotated` forms;

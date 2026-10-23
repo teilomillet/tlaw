@@ -88,6 +88,7 @@ import sys
 import tempfile
 import time
 import tomllib
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field, replace
 from enum import Enum
 from pathlib import Path
@@ -126,6 +127,7 @@ class MutationOutcome(Enum):
     INVALID = "invalid"
     ERROR = "error"
     NOT_RUN = "not-run"
+    EXCLUDED = "excluded"
     UNRESOLVED_EQUIVALENT = "unresolved-equivalent"
 
 
@@ -681,8 +683,9 @@ class BaselineRun:
 class MutantRun:
     """One mutant's final outcome plus the evidence behind it.
 
-    ``exit_code`` is None when the mutant never ran (it failed to compile,
-    a prerequisite failed, planning was requested, or the budget stopped it).
+    ``exit_code`` is None when the mutant never ran (it was excluded, failed
+    to compile, a prerequisite failed, planning was requested, or the budget
+    stopped it).
     ``failed_tests`` names the exact laws
     that rejected the mutant, so a law change can later say which
     survivors it kills.
@@ -721,7 +724,8 @@ def apply_equivalence_ledger(
     returned for the report — a ledger claim contradicted by evidence must
     stay visible, because quietly honoring or dropping it would be the new
     way to game the score. No run is ever removed: equivalents stay in
-    every report and in the runnable denominator.
+    every report and in the runnable denominator. Unrun and excluded entries
+    remain unverified: neither can support or contradict a declaration.
     """
     outcomes = {run.mutation.mutation_id: run.outcome for run in runs}
     updated: list[MutantRun] = []
@@ -743,7 +747,11 @@ def apply_equivalence_ledger(
         outcome = outcomes.get(mutation_id)
         if outcome is None:
             stale.append((mutation_id, "no generated mutation has this ID"))
-        elif outcome not in (MutationOutcome.SURVIVED, MutationOutcome.NOT_RUN):
+        elif outcome not in (
+            MutationOutcome.SURVIVED,
+            MutationOutcome.NOT_RUN,
+            MutationOutcome.EXCLUDED,
+        ):
             stale.append(
                 (mutation_id, f"contradicted by evidence: mutant was {outcome.value}")
             )
@@ -752,7 +760,7 @@ def apply_equivalence_ledger(
 
 @dataclass(frozen=True)
 class CampaignPlan:
-    """Full-campaign estimates, conditional on passing baseline and canary.
+    """Selected-campaign estimates, conditional on passing baseline and canary.
 
     Runs count isolated pytest invocations, not seconds or memory. Finite
     case attempts assume the baseline law inventory and domains stay intact.
@@ -765,6 +773,11 @@ class CampaignPlan:
     min_runs: int
     max_runs: int
     max_case_attempts: int | None
+    excluded_mutations: int = 0
+
+    @property
+    def selected_mutations(self) -> int:
+        return self.generated_mutations - self.excluded_mutations
 
 
 class _RunLimitReached(Exception):
@@ -873,12 +886,24 @@ class MutationResult:
         return self._count(MutationOutcome.NOT_RUN)
 
     @property
-    def complete(self) -> bool:
+    def excluded_count(self) -> int:
+        return self._count(MutationOutcome.EXCLUDED)
+
+    @property
+    def selected_count(self) -> int:
+        return len(self.runs) - self.excluded_count
+
+    @property
+    def selection_complete(self) -> bool:
         return not self.plan_only and not self.has_errors
 
     @property
+    def complete(self) -> bool:
+        return self.selection_complete and self.excluded_count == 0
+
+    @property
     def runnable_total(self) -> int:
-        # Invalid, error and unrun candidates produced no evidence about the
+        # Invalid, error, excluded and unrun candidates produced no evidence about the
         # laws, in either direction, so they stay outside the denominator.
         return (
             self.killed_count + self.survived_count + self.unresolved_equivalent_count
@@ -887,7 +912,7 @@ class MutationResult:
     @property
     def has_errors(self) -> bool:
         canary_failed = self.canary is not None and self.canary.wired is not True
-        no_challenges = not self.runs
+        no_challenges = self.selected_count == 0
         return (
             (not self.baseline_valid)
             or canary_failed
@@ -903,13 +928,19 @@ class MutationResult:
             return "No supported mutations were generated; no mutation evidence exists."
         if self.plan_only:
             return "Campaign plan only; no mutation evidence was established."
+        scope = "selected" if self.excluded_count else "generated"
         statement = (
             f"Killed {self.killed_count} of {self.runnable_total} "
-            "runnable generated mutations."
+            f"runnable {scope} mutations."
         )
         if self.not_run_count or self.stopped_before is not None:
             statement += (
                 f" Campaign incomplete; {self.not_run_count} mutations not run."
+            )
+        if self.excluded_count:
+            statement += (
+                f" {self.excluded_count} mutations excluded; "
+                "evidence covers the selected scope only."
             )
         return statement
 
@@ -919,7 +950,12 @@ class MutationResult:
             "method": self.method,
             "max_cases": self.max_cases,
             "plan_only": self.plan_only,
-            "plan": None if self.plan is None else asdict(self.plan),
+            "plan": (
+                None
+                if self.plan is None
+                else asdict(self.plan)
+                | {"selected_mutations": self.plan.selected_mutations}
+            ),
             "work": {
                 "max_runs": self.max_runs,
                 "runs_started": self.runs_started,
@@ -965,6 +1001,7 @@ class MutationResult:
                     "qualname": run.mutation.qualname,
                     "description": run.mutation.description,
                     "outcome": run.outcome.value,
+                    "selected": run.outcome is not MutationOutcome.EXCLUDED,
                     "kill_kind": None if run.kill_kind is None else run.kill_kind.value,
                     "note": run.note,
                     "exit_code": run.exit_code,
@@ -993,6 +1030,9 @@ class MutationResult:
                 "invalid": self.invalid_count,
                 "errors": self.error_count,
                 "not_run": self.not_run_count,
+                "selected": self.selected_count,
+                "excluded": self.excluded_count,
+                "selection_complete": self.selection_complete,
                 "complete": self.complete,
                 "runnable": self.runnable_total,
                 "generated": len(self.runs),
@@ -1030,22 +1070,28 @@ class MutationResult:
             f"{len(self.baseline.obligations)} completed"
         )
         lines.extend(f"  {evidence_line(law)}" for law in self.baseline.obligations)
+        lines.append(
+            f"Mutation scope: generated {len(self.runs)}; selected {self.selected_count}; "
+            f"excluded {self.excluded_count}"
+        )
+        scope = "selected campaign" if self.excluded_count else "full campaign"
         if self.plan is not None:
             plan = self.plan
             lines.append(
                 f"Campaign plan: generated mutations {plan.generated_mutations}; "
+                f"selected {plan.selected_mutations}; excluded {plan.excluded_mutations}; "
                 f"compiling mutations {plan.runnable_mutations}; law cases {plan.law_cases}"
             )
             lines.append(
                 f"Planned isolated runs: {plan.min_runs}..{plan.max_runs} "
-                "for the full campaign, including baseline, canary and confirmations"
+                f"for the {scope}, including baseline, canary and confirmations"
             )
             if plan.cases_per_run is None:
                 lines.append("Planned law input counts: unknown (sampled checks)")
             else:
                 lines.append(
                     f"Planned finite law cases per ordinary run: {plan.cases_per_run}; "
-                    f"full-campaign case attempts at most {plan.max_case_attempts} "
+                    f"{scope} case attempts at most {plan.max_case_attempts} "
                     "if the baseline inventory and domains remain unchanged"
                 )
         else:
@@ -1080,6 +1126,7 @@ class MutationResult:
             MutationOutcome.INVALID: "INVALID",
             MutationOutcome.ERROR: "ERROR",
             MutationOutcome.NOT_RUN: "NOT RUN",
+            MutationOutcome.EXCLUDED: "EXCLUDED",
             MutationOutcome.UNRESOLVED_EQUIVALENT: "UNRESOLVED EQUIVALENT",
         }
         if not self.runs:
@@ -1111,6 +1158,7 @@ class MutationResult:
             )
         lines.append(f"Survivors: {self.survived_count}")
         lines.append(f"Mutations not run: {self.not_run_count}")
+        lines.append(f"Mutations excluded from selection: {self.excluded_count}")
         lines.append(
             f"Unresolved equivalent candidates: {self.unresolved_equivalent_count}"
         )
@@ -1830,6 +1878,7 @@ def mutate(
     max_cases: int | None = None,
     plan_only: bool = False,
     max_runs: int | None = None,
+    mutant_ids: Sequence[str] | None = None,
 ) -> MutationResult:
     """Challenge one laws file with generated mutations of one module.
 
@@ -1849,11 +1898,16 @@ def mutate(
     including baseline, canary and confirmations. It does not alter calibrated
     deadlines. An unconfirmed candidate is never credited as a kill.
 
+    ``mutant_ids`` selects exact IDs from the current generated inventory.
+    Unknown IDs and empty selections are rejected before execution. Repeated
+    IDs run once, in generation order. Excluded mutants remain visible without
+    evidence; reruns establish fresh evidence rather than reuse prior results.
+
     Evidence flow (docs/mutation-evidence.md, with the encoded rules):
 
-    1. run the unmodified boundary; the baseline must pass, and its
+    1. generate deterministic single-site mutations and validate any exact IDs;
+    2. run the unmodified boundary; the baseline must pass, and its
        measured duration calibrates every mutant's timeout budget;
-    2. generate deterministic single-site mutations of the module;
     3. run the canary — a poisoned implementation in which every function
        raises; if the laws still pass, the laws never observed the
        boundary module and the whole report is INVALID EVIDENCE;
@@ -1899,6 +1953,27 @@ def mutate(
             f"cannot parse implementation {implementation_path}: {error}"
         ) from error
 
+    selected_ids = {mutation.mutation_id for mutation in mutations}
+    if mutant_ids is not None:
+        if (
+            isinstance(mutant_ids, (str, bytes))
+            or not isinstance(mutant_ids, Sequence)
+            or not mutant_ids
+            or any(
+                not isinstance(identifier, str) or not identifier
+                for identifier in mutant_ids
+            )
+        ):
+            raise ManifestError("mutant_ids must be a non-empty sequence of exact IDs")
+        requested = set(mutant_ids)
+        unknown = requested - selected_ids
+        if unknown:
+            raise ManifestError(f"unknown mutant IDs: {', '.join(sorted(unknown))}")
+        selected_ids = requested
+    selected_mutations = tuple(
+        mutation for mutation in mutations if mutation.mutation_id in selected_ids
+    )
+
     work = _RunBudget(max_runs)
     plan: CampaignPlan | None = None
     budget_seconds = 0.0
@@ -1924,6 +1999,17 @@ def mutate(
     def finish(
         runs: tuple[MutantRun, ...], canary: CanaryRun | None = None
     ) -> MutationResult:
+        selected_runs = {run.mutation.mutation_id: run for run in runs}
+        runs = tuple(
+            selected_runs[mutation.mutation_id]
+            if mutation.mutation_id in selected_ids
+            else MutantRun(
+                mutation,
+                MutationOutcome.EXCLUDED,
+                "excluded from the selected scope; no evidence established",
+            )
+            for mutation in mutations
+        )
         runs, stale = apply_equivalence_ledger(runs, ledger)
         return MutationResult(
             laws=str(laws_path),
@@ -1955,19 +2041,22 @@ def mutate(
 
     if not baseline.valid:
         return finish(
-            tuple(unrun(mutation, "baseline was invalid") for mutation in mutations)
+            tuple(
+                unrun(mutation, "baseline was invalid")
+                for mutation in selected_mutations
+            )
         )
 
     # Compilation has no child process. Check once so planning and execution
     # agree about which generated candidates can consume a run.
-    for mutation in mutations:
+    for mutation in selected_mutations:
         try:
             compile(mutation.mutated_source, f"<mutant {mutation.mutation_id}>", "exec")
         except SyntaxError as error:
             compilation_errors[mutation.mutation_id] = str(error)
 
-    runnable = len(mutations) - len(compilation_errors)
-    preparation_runs = 1 + bool(mutations)  # Baseline, and canary if challenges exist.
+    runnable = len(selected_mutations) - len(compilation_errors)
+    preparation_runs = 1 + bool(selected_mutations)
     totals = tuple(law.cases_total for law in baseline.obligations)
     cases_per_run = (
         None
@@ -1977,6 +2066,7 @@ def mutate(
     maximum_runs = preparation_runs + 3 * runnable
     plan = CampaignPlan(
         generated_mutations=len(mutations),
+        excluded_mutations=len(mutations) - len(selected_mutations),
         runnable_mutations=runnable,
         law_cases=len(baseline.obligations),
         cases_per_run=cases_per_run,
@@ -1990,11 +2080,13 @@ def mutate(
         timeout_floor_seconds, timeout_multiplier * baseline.duration_seconds
     )
     if plan_only:
-        return finish(tuple(unrun(mutation, "plan only") for mutation in mutations))
+        return finish(
+            tuple(unrun(mutation, "plan only") for mutation in selected_mutations)
+        )
 
     # The mandatory canary establishes wiring before any candidate is scored.
     canary: CanaryRun | None = None
-    if mutations:
+    if selected_mutations:
         try:
             canary_run = _run_pytest_in_copy(
                 boundary,
@@ -2005,7 +2097,9 @@ def mutate(
                 purpose="canary",
             )
         except _RunLimitReached as error:
-            return finish(tuple(unrun(mutation, str(error)) for mutation in mutations))
+            return finish(
+                tuple(unrun(mutation, str(error)) for mutation in selected_mutations)
+            )
         if canary_run.timed_out:
             canary_problem = None
             canary_note = f"calibrated timeout after {budget_seconds:.1f}s"
@@ -2035,13 +2129,13 @@ def mutate(
             return finish(
                 tuple(
                     unrun(mutation, "canary did not establish wiring")
-                    for mutation in mutations
+                    for mutation in selected_mutations
                 ),
                 canary,
             )
 
     finished: list[MutantRun] = []
-    for mutation in mutations:
+    for mutation in selected_mutations:
         if mutation.mutation_id in compilation_errors:
             finished.append(unrun(mutation, "does not compile"))
             continue
