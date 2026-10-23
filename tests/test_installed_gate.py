@@ -15,13 +15,32 @@ from scripts.check_installed import clean_environment, run, verify_mutation
 def killed_report() -> dict:
     """The public report subset needed to support one exact mutant kill."""
     identity = "laws.py::increment_advances_once"
+
+    def obligation(status: str) -> dict:
+        return {
+            "identity": identity,
+            "status": status,
+            "method": "sampled",
+            "cases_checked": None,
+            "cases_total": None,
+            "exhausted": False,
+            "list_bounds": {},
+        }
+
     return {
         "schema": "tlaw.mutation/v1",
+        "method": "sampled",
+        "max_cases": None,
         "baseline": {
             "valid": True,
-            "obligations": [{"identity": identity, "status": "passed"}],
+            "obligations": [obligation("passed")],
         },
-        "canary": {"wired": True, "exit_code": 1, "timed_out": False},
+        "canary": {
+            "wired": True,
+            "exit_code": 1,
+            "timed_out": False,
+            "obligations": [obligation("failed")],
+        },
         "summary": {
             "runnable": 1,
             "killed": 1,
@@ -41,6 +60,7 @@ def killed_report() -> dict:
                 "evidence": {
                     "summary": {"status": "failed", "retained": True},
                     "failures": [{"identity": identity, "capture_error": None}],
+                    "obligations": [obligation("failed")],
                 },
                 "replay_evidence": {
                     "mode": "replay",
@@ -60,8 +80,89 @@ def killed_report() -> dict:
     }
 
 
+@pytest.fixture
+def exhaustive_report(killed_report: dict) -> dict:
+    killed_report["method"] = "exhaustive"
+    killed_report["max_cases"] = 3
+    obligations = [
+        killed_report["baseline"]["obligations"][0],
+        killed_report["canary"]["obligations"][0],
+        killed_report["mutations"][0]["evidence"]["obligations"][0],
+    ]
+    for obligation in obligations:
+        passed = obligation["status"] == "passed"
+        obligation.update(
+            method="exhaustive",
+            cases_checked=3 if passed else 1,
+            cases_total=3,
+            exhausted=passed,
+        )
+    return killed_report
+
+
 def test_exact_kill_evidence_is_accepted(killed_report: dict) -> None:
     verify_mutation(killed_report)
+
+
+def test_exhaustive_kill_evidence_is_accepted(exhaustive_report: dict) -> None:
+    verify_mutation(exhaustive_report, method="exhaustive")
+
+
+@pytest.mark.parametrize("stage", ["baseline", "canary", "mutant"])
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("cases_total", 1),
+        ("cases_checked", 0),
+        ("exhausted", None),
+        ("list_bounds", {"value": {"min_size": 0, "max_size": 1}}),
+        ("method", "sampled"),
+    ],
+)
+def test_exhaustive_receipts_cannot_narrow_the_domain(
+    exhaustive_report: dict, stage: str, field: str, value: object
+) -> None:
+    report = (
+        exhaustive_report["mutations"][0]["evidence"]
+        if stage == "mutant"
+        else exhaustive_report[stage]
+    )
+    report["obligations"][0][field] = value
+
+    with pytest.raises(RuntimeError, match=f"unexpected {stage}"):
+        verify_mutation(exhaustive_report, method="exhaustive")
+
+
+@pytest.mark.parametrize("stage", ["baseline", "canary", "mutant"])
+@pytest.mark.parametrize("field", ["cases_checked", "cases_total"])
+def test_exhaustive_receipts_require_case_counts(
+    exhaustive_report: dict, stage: str, field: str
+) -> None:
+    report = (
+        exhaustive_report["mutations"][0]["evidence"]
+        if stage == "mutant"
+        else exhaustive_report[stage]
+    )
+    del report["obligations"][0][field]
+
+    with pytest.raises(RuntimeError, match=f"unexpected {stage} exhaustive counts"):
+        verify_mutation(exhaustive_report, method="exhaustive")
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("method", "sampled", "mutation method"),
+        ("max_cases", 1, "mutation case cap"),
+    ],
+)
+def test_exhaustive_campaign_requires_its_requested_mode_and_cap(
+    exhaustive_report: dict, field: str, value: object, message: str
+) -> None:
+    exhaustive_report[field] = value
+
+    with pytest.raises(RuntimeError, match=message):
+        verify_mutation(exhaustive_report, method="exhaustive")
 
 
 def test_killed_summary_without_exact_replay_is_rejected(killed_report: dict) -> None:

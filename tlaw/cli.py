@@ -87,6 +87,16 @@ def _parser() -> argparse.ArgumentParser:
     mutate.add_argument("law_file", type=Path)
     mutate.add_argument("implementation", type=Path)
     mutate.add_argument(
+        "--exhaustive",
+        action="store_true",
+        help="enumerate declared finite inputs for baseline, canary and mutants",
+    )
+    mutate.add_argument(
+        "--max-cases",
+        type=int,
+        help="maximum combinations per exhaustive law case (default: 1000)",
+    )
+    mutate.add_argument(
         "--equivalents",
         type=Path,
         help="TOML ledger of mutation IDs accepted as unresolved equivalents",
@@ -225,11 +235,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         return result.exit_code
 
     if args.command == "mutate":
+        if args.max_cases is not None and (not args.exhaustive or args.max_cases <= 0):
+            print(
+                "tlaw: mutate --max-cases requires --exhaustive and a positive integer",
+                file=sys.stderr,
+            )
+            return 2
         try:
             result = mutate(
                 args.law_file,
                 args.implementation,
                 equivalents=args.equivalents,
+                exhaustive=args.exhaustive,
+                max_cases=args.max_cases,
             )
         except ManifestError as error:
             print(f"tlaw: {error}", file=sys.stderr)

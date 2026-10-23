@@ -63,6 +63,44 @@ truth.
 
 ## Honest outcomes
 
+### Exhaustive finite inputs
+
+Mutation uses sampled checks by default. To enumerate the declared finite
+inputs in every ordinary run, select exhaustive mode explicitly:
+
+```console
+tlaw mutate laws.py implementation.py --exhaustive --max-cases 1000 --json mutations.json
+```
+
+The Python API accepts `mutate(laws, implementation, exhaustive=True,
+max_cases=1000)`. The default cap is 1,000 combinations per collected law case,
+including each pytest parametrization. The supported inputs and enumeration
+order are the same as [exhaustive checking](current-behavior.md#exhaustive-finite-checking):
+finite scalar domains, dictionary-form records, and explicitly bounded lists,
+including nesting. Unsupported declarations or a space larger than the cap
+invalidate the baseline; tlaw never falls back to sampling.
+
+The baseline, canary, mutants, fresh timeout baseline and timeout retry all use
+the selected mode and cap. Ordinary receipts must match the baseline's law
+inventory, checking method, total case counts and list length bounds. A passing
+baseline or survivor must exhaust every declared case. A failing law stops at
+its first counterexample, so its checked count may be smaller than its total.
+Exact replay executes only that retained input and checks the saved exception;
+it does not enumerate the domain again.
+
+Text reports show the checking method, cap, and each law case's checked/total
+counts and nested list length bounds. JSON adds `method` (`sampled` or
+`exhaustive`) and `max_cases` (an integer or `null`) at the top level; the
+baseline, canary and per-mutant obligations retain their counts, bounds and
+`exhausted` flags. A timed-out process may leave no receipt, so its counts remain
+unavailable. Timeout kills still require a fresh passing baseline and a repeated
+calibrated timeout, and carry no law attribution.
+
+Exhaustion covers the declared inputs for these generated mutants. It does not
+establish correctness outside those bounds or against every possible mistake.
+
+### Outcome meanings
+
 Every generated mutation needs one explicit outcome:
 
 - **killed:** an **observed** kill has complete law execution and retained

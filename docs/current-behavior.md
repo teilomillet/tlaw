@@ -218,7 +218,7 @@ retain the same replay-safe reference restrictions as other finite domains;
 sharing a mutable leaf across fields or positions is refused. Duplicate and
 type-distinct field choices remain separate cases. The first failure retains
 the original typed dictionary or history for exact replay through the existing
-codec, and mutation checks continue through the existing sampled runner.
+codec. Mutation can use the same finite declarations with `--exhaustive`.
 
 ### Execution and evidence
 
@@ -245,7 +245,8 @@ Skip, xfail, setup/teardown errors, and interrupted execution cannot establish
 exhaustion. An exhausted result establishes the observed law outcomes for those
 declared inputs in that execution. It does not prove the law specification,
 hidden state, external effects, or behavior outside the declared domain.
-Mutation checks continue to challenge laws through the existing sampled runner.
+Mutation defaults to sampled checks and accepts `--exhaustive` to enumerate
+these declared inputs in each ordinary run.
 
 ## Randomized search and retained replay
 
@@ -909,6 +910,8 @@ The existing calibrated-timeout canary behavior is preserved.
 
 The additive fields in `tlaw.mutation/v1` expose this evidence:
 
+- `method` is `sampled` or `exhaustive`, and `max_cases` is the selected
+  exhaustive cap or `null` for sampling;
 - `baseline.obligations` and `baseline.evidence_error` account for the baseline;
 - `canary.obligations`, `canary.evidence`, and `canary.evidence_error` describe
   the wiring observation;
@@ -924,7 +927,23 @@ For exact confirmation, a passed fresh replay receipt means the saved failure
 reproduced; it does not mean the original law passed. `replay_method` records
 the attempted method on both successful and unsuccessful confirmations; the
 mutation outcome and note state whether the attempt confirmed a kill.
-Mutation continues to use sampled checks; exhaustive mutation is not added.
+
+Exhaustive mutation is explicit:
+
+```console
+tlaw mutate laws.py implementation.py --exhaustive --max-cases 1000 --json mutations.json
+```
+
+The default cap is 1,000 combinations per collected law case, including each
+parametrized item. The baseline, canary, mutants and timeout confirmation all
+use the same mode and cap. Ordinary receipts must match the baseline's checking
+method, total case counts and list length bounds, as well as its law inventory.
+Passing exhaustive obligations must finish every case; failed obligations
+record the attempted count before their first counterexample. Text and JSON
+expose these counts and nested bounds. Unsupported or oversized domains
+invalidate the baseline without falling back to sampling. Exact replay still
+executes only retained inputs. See [mutation evidence](mutation-evidence.md#exhaustive-finite-inputs)
+for the scope and limits.
 
 The law-first feature workflow built on these guarantees — laws before
 implementation, in a flat mutate-ready folder — is demonstrated end to end

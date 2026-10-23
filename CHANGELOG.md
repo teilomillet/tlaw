@@ -6,6 +6,15 @@ files into this document when the release is prepared.
 
 <!-- towncrier release notes start -->
 
+## 0.0.8 — 2026-10-23
+
+### Added
+
+- Add exhaustive mutation checking over declared finite inputs with explicit
+  bounds and case counts, matching law obligations, isolated runs, a mandatory
+  canary, calibrated timeouts and exact counterexample replay.
+
+
 ## 0.0.7 — 2026-10-23
 
 ### Added

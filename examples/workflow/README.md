@@ -65,14 +65,19 @@ mv implementation.py.good implementation.py
 tlaw check --replay failure.json
 tlaw check laws.py
 tlaw mutate laws.py implementation.py --json mutation.json
+tlaw mutate laws.py implementation.py --exhaustive --max-cases 3 --json finite-mutation.json
 ```
 
 Replay now exits `1` because the retained counterexample no longer fails. The
 fresh check exits `0`. Mutation also exits `0`: its baseline passes, its canary
 confirms the laws observe the copied implementation, and its one generated
 mutant (`+` becomes `-`) is killed and confirmed by exact replay. `mutation.json`
-keeps the original failure and replay evidence. Mutation uses sampled checks;
-the exhaustive run above does not make mutation exhaustive.
+keeps the original failure and replay evidence. This command uses sampled checks.
+The second mutation command explicitly selects exhaustive checking: its baseline
+reports `3/3 cases checked`, while its canary and mutant each fail on the first
+case (`1/3`, not exhausted). The mutant's exact replay checks only the retained
+input (`1/1`), without enumerating again. Both campaigns keep fresh isolated
+copies, the canary and calibrated timeout confirmation.
 
 The installed-package gate runs this sequence in a temporary copy of the folder,
 using a wheel installed in a fresh environment. It checks the JSON evidence and

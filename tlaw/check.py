@@ -17,6 +17,7 @@ from .finite import DEFAULT_MAX_CASES, MAX_CASES_ENV
 from .obligations import (
     OBLIGATIONS_ENV,
     Obligation,
+    evidence_line,
     obligations_complete,
     read_obligations,
 )
@@ -83,23 +84,6 @@ def _environment(*, explain: bool) -> dict[str, str]:
     return environment
 
 
-def _evidence_line(law: Obligation) -> str:
-    if law.method == "sampled":
-        return f"sampled: {law.nodeid}; total input space not enumerated"
-    bounds = ""
-    if law.list_bounds:
-        lengths = ", ".join(
-            f"{name}={bound['min_size']}..{bound['max_size']}"
-            for name, bound in law.list_bounds.items()
-        )
-        bounds = f"; lengths: {lengths}"
-    outcome = "all declared cases passed" if law.exhausted else "not exhausted"
-    return (
-        f"{law.method}: {law.nodeid}; "
-        f"{law.cases_checked}/{law.cases_total} cases checked{bounds}; {outcome}"
-    )
-
-
 @dataclass(frozen=True)
 class _PytestRun:
     exit_code: int
@@ -153,7 +137,7 @@ def _run_pytest(
     for law in obligations:
         if not law.completed:
             output += f"  {law.status}: {law.nodeid}\n"
-        output += f"  {_evidence_line(law)}\n"
+        output += f"  {evidence_line(law)}\n"
     return _PytestRun(exit_code, output, obligations)
 
 
@@ -295,7 +279,7 @@ class FolderCheckResult:
             lines.append(f"  {label} [{method}]  {result.path}")
             if method == "exhaustive":
                 for entry in result.report.get("obligations", ()):
-                    lines.append(f"    {_evidence_line(Obligation(**entry))}")
+                    lines.append(f"    {evidence_line(Obligation(**entry))}")
         passed = sum(result.passed for result in self.results)
         lines.append(f"{passed} of {len(self.results)} law file(s) passed")
         return "\n".join(lines) + "\n"

@@ -94,10 +94,11 @@ from pathlib import Path
 from typing import Any, Callable, Literal
 
 from .audit import TARGET_ENV, ManifestError
-from .finite import MAX_CASES_ENV
+from .finite import DEFAULT_MAX_CASES, MAX_CASES_ENV
 from .obligations import (
     OBLIGATIONS_ENV,
     Obligation,
+    evidence_line,
     obligations_complete,
     read_obligations,
 )
@@ -776,6 +777,11 @@ class MutationResult:
     # ran first — it is a default, not an option, so a user who has never
     # heard of it is still protected from unwired evidence.
     canary: CanaryRun | None = None
+    max_cases: int | None = None
+
+    @property
+    def method(self) -> Literal["sampled", "exhaustive"]:
+        return "sampled" if self.max_cases is None else "exhaustive"
 
     def _count(self, outcome: MutationOutcome) -> int:
         return sum(run.outcome is outcome for run in self.runs)
@@ -851,6 +857,8 @@ class MutationResult:
     def to_dict(self) -> dict[str, Any]:
         return {
             "schema": "tlaw.mutation/v1",
+            "method": self.method,
+            "max_cases": self.max_cases,
             "laws": self.laws,
             "implementation": self.implementation,
             "boundary": {"kind": self.boundary_kind, "module": self.module_name},
@@ -933,6 +941,11 @@ class MutationResult:
             f"Implementation: {self.implementation}",
             f"Boundary: {self.boundary_kind} ({self.module_name})",
             (
+                "Checking: sampled; total input space not enumerated"
+                if self.max_cases is None
+                else f"Checking: exhaustive; at most {self.max_cases} cases per law case"
+            ),
+            (
                 f"Baseline: {baseline_status}"
                 f" ({self.baseline.duration_seconds:.2f}s);"
                 f" per-mutant budget {self.budget_seconds:.1f}s"
@@ -945,6 +958,7 @@ class MutationResult:
             f"Baseline law obligations: {completed} of "
             f"{len(self.baseline.obligations)} completed"
         )
+        lines.extend(f"  {evidence_line(law)}" for law in self.baseline.obligations)
         if self.baseline.evidence_error:
             lines.append(f"Baseline evidence: {self.baseline.evidence_error}")
         if self.canary is not None:
@@ -961,6 +975,7 @@ class MutationResult:
                 )
             else:
                 lines.append(f"Canary: ERROR — wiring unverified ({self.canary.note})")
+            lines.extend(f"  {evidence_line(law)}" for law in self.canary.obligations)
         lines.append("Mutations:")
         labels = {
             MutationOutcome.KILLED: "KILLED",
@@ -984,6 +999,10 @@ class MutationResult:
                 f"- {run.mutation.mutation_id} {labels[run.outcome]}"
                 f" {run.mutation.description}{detail}"
             )
+            for entry in run.evidence.get("obligations", ()):
+                lines.append(f"  {evidence_line(Obligation(**entry))}")
+            if run.timed_out and not run.evidence.get("obligations"):
+                lines.append("  case counts unavailable: execution timed out")
         for mutation_id, note in self.stale_ledger_entries:
             lines.append(f"- {mutation_id} STALE LEDGER ENTRY: {note}")
         lines.append(self.statement)
@@ -1212,6 +1231,7 @@ def _run_pytest_in_copy(
     mutated_source: str | None,
     timeout_seconds: float,
     replay_evidence: dict[str, Any] | None = None,
+    max_cases: int | None = None,
 ) -> _PytestRun:
     """Run the laws once against a fresh copy of the boundary.
 
@@ -1257,6 +1277,12 @@ def _run_pytest_in_copy(
     environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     environment["PYTHONHASHSEED"] = "0"
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
+
+    mode = "default"
+    if replay_evidence is not None:
+        mode = "replay"
+    elif max_cases is not None:
+        mode = "exhaustive"
 
     with tempfile.TemporaryDirectory(prefix="tlaw-mutation-") as workspace:
         root = Path(workspace) / "boundary"
@@ -1312,7 +1338,9 @@ def _run_pytest_in_copy(
         environment[OBLIGATIONS_ENV] = str(receipt)
         if replay_evidence is None:
             environment[CAPTURE_ENV] = str(capture)
-            environment[MODE_ENV] = "default"
+            environment[MODE_ENV] = mode
+            if max_cases is not None:
+                environment[MAX_CASES_ENV] = str(max_cases)
         else:
             report_path = Path(workspace) / "replay.json"
             report_path.write_text(json.dumps(replay_evidence), encoding="utf-8")
@@ -1362,7 +1390,7 @@ def _run_pytest_in_copy(
             evidence = build_check_report(
                 law_file,
                 working_directory=law_file.parent,
-                mode="replay" if replay_evidence is not None else "default",
+                mode=mode,
                 seed=None,
                 pytest_exit_code=exit_code,
                 captured=read_capture(capture),
@@ -1431,6 +1459,7 @@ def _evidence_problem(
     *,
     expected: tuple[Obligation, ...] | None = None,
     require_retained: bool = True,
+    max_cases: int | None = None,
 ) -> str | None:
     """Admit ordinary outcomes only after their law execution is accounted for."""
     if run.evidence_error:
@@ -1444,6 +1473,24 @@ def _evidence_problem(
         return f"incomplete law obligations: {incomplete or 'no laws collected'}"
     if expected is not None and _inventory(run.obligations) != _inventory(expected):
         return "law inventory differs from the baseline"
+    method = "sampled" if max_cases is None else "exhaustive"
+    for law in run.obligations:
+        if law.method != method:
+            return f"law checking method differs from requested {method} mode"
+        if max_cases is not None and (
+            law.cases_total is None or not 0 < law.cases_total <= max_cases
+        ):
+            return "law case count exceeds the requested exhaustive limit"
+    if expected is not None:
+        baseline = {law.nodeid: law for law in expected}
+        for law in run.obligations:
+            original = baseline[law.nodeid]
+            if (
+                law.method != original.method
+                or law.cases_total != original.cases_total
+                or law.list_bounds != original.list_bounds
+            ):
+                return "law checking method, case counts or bounds differ from the baseline"
     failures = run.evidence.get("failures", ())
     failed = {law.identity for law in run.obligations if law.status == "failed"}
     if run.exit_code == 0 and (failed or failures):
@@ -1499,11 +1546,13 @@ def _run_one_mutant(
     baseline_duration: float,
     timeout_multiplier: float,
     expected: tuple[Obligation, ...],
+    max_cases: int | None = None,
 ) -> MutantRun:
     executed = _run_pytest_in_copy(
         boundary,
         mutated_source=mutation.mutated_source,
         timeout_seconds=budget_seconds,
+        max_cases=max_cases,
     )
     outcome, kill_kind, note = classify_mutant_exit(
         executed.exit_code, timed_out=executed.timed_out
@@ -1516,7 +1565,7 @@ def _run_one_mutant(
             f" ({timeout_multiplier:g}x baseline {baseline_duration:.2f}s)"
         )
     elif executed.exit_code in (0, 1):
-        problem = _evidence_problem(executed, expected=expected)
+        problem = _evidence_problem(executed, expected=expected, max_cases=max_cases)
         if problem:
             outcome, kill_kind, note = MutationOutcome.ERROR, None, problem
     # A timeout's partial receipt is history, not law attribution. Errors
@@ -1573,6 +1622,7 @@ def _confirm_kill(
     timeout_floor_seconds: float,
     baseline_timeout_seconds: float,
     expected: tuple[Obligation, ...],
+    max_cases: int | None = None,
 ) -> MutantRun:
     """Confirm retained failures exactly, or repeat a freshly timed timeout.
 
@@ -1586,8 +1636,9 @@ def _confirm_kill(
             boundary,
             mutated_source=None,
             timeout_seconds=baseline_timeout_seconds,
+            max_cases=max_cases,
         )
-        problem = _evidence_problem(fresh, expected=expected)
+        problem = _evidence_problem(fresh, expected=expected, max_cases=max_cases)
         if (
             fresh.exit_code != 0
             or fresh.timed_out
@@ -1617,6 +1668,7 @@ def _confirm_kill(
         mutated_source=mutation.mutated_source,
         timeout_seconds=replay_budget,
         replay_evidence=replay_evidence,
+        max_cases=max_cases if replay_evidence is None else None,
     )
     run = replace(
         run,
@@ -1654,6 +1706,8 @@ def mutate(
     timeout_floor_seconds: float = 5.0,
     timeout_multiplier: float = 10.0,
     baseline_timeout_seconds: float = 60.0,
+    exhaustive: bool = False,
+    max_cases: int | None = None,
 ) -> MutationResult:
     """Challenge one laws file with generated mutations of one module.
 
@@ -1662,6 +1716,11 @@ def mutate(
     package may be targeted from laws anywhere; the whole package is copied
     and shadows the installed package. In both shapes, each run sees exactly
     one coherent world.
+
+    ``exhaustive=True`` enumerates the declared finite inputs for every
+    ordinary run, with ``max_cases`` combinations per law case (default 1,000).
+    Exact replay executes only retained inputs. A survivor exhausts the declared
+    space; a failing law records how many cases it checked before stopping.
 
     Evidence flow (docs/mutation-evidence.md, with the encoded rules):
 
@@ -1692,6 +1751,14 @@ def mutate(
     if timeout_floor_seconds <= 0 or timeout_multiplier <= 0:
         raise ValueError("timeout floor and multiplier must be positive")
 
+    if max_cases is not None:
+        if not exhaustive:
+            raise ValueError("max_cases requires exhaustive=True")
+        if type(max_cases) is not int or max_cases <= 0:
+            raise ValueError("max_cases must be a positive integer")
+    if exhaustive and max_cases is None:
+        max_cases = DEFAULT_MAX_CASES
+
     ledger = load_equivalence_ledger(equivalents) if equivalents else {}
     boundary = describe_boundary(laws_path, implementation_path)
     implementation_source = implementation_path.read_text(encoding="utf-8")
@@ -1706,6 +1773,7 @@ def mutate(
         boundary,
         mutated_source=None,
         timeout_seconds=baseline_timeout_seconds,
+        max_cases=max_cases,
     )
     baseline = BaselineRun(
         exit_code=baseline_run.exit_code,
@@ -1714,7 +1782,7 @@ def mutate(
         output=baseline_run.output,
         command=baseline_run.command,
         obligations=baseline_run.obligations,
-        evidence_error=_evidence_problem(baseline_run),
+        evidence_error=_evidence_problem(baseline_run, max_cases=max_cases),
     )
 
     if not baseline.valid:
@@ -1734,6 +1802,7 @@ def mutate(
             implementation=str(implementation_path),
             module_name=boundary.module_name,
             boundary_kind="package" if boundary.is_package else "directory",
+            max_cases=max_cases,
             baseline=baseline,
             runs=runs,
             stale_ledger_entries=stale,
@@ -1757,13 +1826,17 @@ def mutate(
             boundary,
             mutated_source=poison_source(implementation_source),
             timeout_seconds=budget_seconds,
+            max_cases=max_cases,
         )
         if canary_run.timed_out:
             canary_problem = None
             canary_note = f"calibrated timeout after {budget_seconds:.1f}s"
         else:
             canary_problem = _evidence_problem(
-                canary_run, expected=baseline.obligations, require_retained=False
+                canary_run,
+                expected=baseline.obligations,
+                require_retained=False,
+                max_cases=max_cases,
             )
             canary_note = canary_problem or (
                 _unwired_note(boundary)
@@ -1798,6 +1871,7 @@ def mutate(
                 implementation=str(implementation_path),
                 module_name=boundary.module_name,
                 boundary_kind="package" if boundary.is_package else "directory",
+                max_cases=max_cases,
                 baseline=baseline,
                 runs=runs,
                 stale_ledger_entries=stale,
@@ -1828,6 +1902,7 @@ def mutate(
             baseline_duration=baseline.duration_seconds,
             timeout_multiplier=timeout_multiplier,
             expected=baseline.obligations,
+            max_cases=max_cases,
         )
         if run.outcome is MutationOutcome.KILLED:
             # Rule 3: a kill that does not replay is an error, and what
@@ -1844,6 +1919,7 @@ def mutate(
                 timeout_floor_seconds=timeout_floor_seconds,
                 baseline_timeout_seconds=baseline_timeout_seconds,
                 expected=baseline.obligations,
+                max_cases=max_cases,
             )
         finished.append(run)
 
@@ -1853,6 +1929,7 @@ def mutate(
         implementation=str(implementation_path),
         module_name=boundary.module_name,
         boundary_kind="package" if boundary.is_package else "directory",
+        max_cases=max_cases,
         baseline=baseline,
         runs=runs,
         stale_ledger_entries=stale,

@@ -72,7 +72,9 @@ domains, structural comparison, stateful paths, and mutation evidence:
 - `system`, `call`, `then`, and `same_as` cover explicit stateful paths; and
 - `tlaw mutate laws.py implementation.py` challenges the laws with generated
   mutations of one module and shows every survivor, for a flat feature folder
-  or a module inside an installed package.
+  or a module inside an installed package; add `--exhaustive --max-cases 1000`
+  to enumerate declared finite inputs and report each law's bounds and case
+  counts while preserving exact replay and calibrated timeout confirmation.
 
 Important pieces are still intentionally absent: domain predicates and nested
 domain positions beyond the implemented `number`, `integer`, `list_of`,
@@ -388,7 +390,7 @@ This repository enforces itself with one visible gate, `scripts/gate`: the
 committed dependency lock, ruff, the full property suite, independently
 confirmed CrossHair contracts, tlaw's self-laws, `tlaw check` on the whole
 `examples/` folder, and `tlaw mutate` on the flat examples. A separate
-scheduled and path-triggered workflow runs the slower exhaustive mutation
+scheduled and path-triggered workflow runs the slower full mutation
 grade for the core value boundaries. The exact claim and its limits are in
 [core evidence](https://github.com/teilomillet/tlaw/blob/main/docs/core-evidence.md).
 CI pins uv and runs the gate on every push and pull request
@@ -405,8 +407,8 @@ lists. CI also pins uv, and the gate refuses a stale dependency lock.
 The gate also builds the source distribution and wheel, installs the wheel with
 locked runtime dependencies in a fresh environment, and runs the worked example
 outside the checkout. It verifies sampled and exhaustive checks, retained
-counterexample JSON, replay before and after a repair, and a mutation kill
-confirmed by exact replay. Run just this check with
+counterexample JSON, replay before and after a repair, and sampled and exhaustive
+mutation kills confirmed by exact replay. Run just this check with
 `uv run python scripts/check_installed.py`. The release workflow uses the same
 check on the exact wheel it uploads.
 

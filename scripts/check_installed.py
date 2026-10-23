@@ -75,15 +75,43 @@ def read_check(path: Path, *, status: str, method: str) -> dict:
     return report
 
 
-def verify_mutation(report: dict) -> None:
+def verify_mutation(report: dict, *, method: str = "sampled") -> None:
+    def verify_obligation(obligation: dict, *, status: str, label: str) -> None:
+        require(obligation["identity"] == LAW, f"unexpected {label} law")
+        require(obligation["status"] == status, f"unexpected {label} status")
+        require(obligation.get("method") == method, f"unexpected {label} method")
+        if method == "exhaustive":
+            checked = 3 if status == "passed" else 1
+            require(
+                obligation.get("cases_checked") == checked
+                and obligation.get("cases_total") == 3
+                and obligation.get("exhausted") is (status == "passed")
+                and obligation.get("list_bounds") == {},
+                f"unexpected {label} exhaustive counts or bounds",
+            )
+        else:
+            require(
+                obligation.get("cases_checked") is None
+                and obligation.get("cases_total") is None
+                and obligation.get("exhausted") is False
+                and obligation.get("list_bounds") == {},
+                f"unexpected {label} sampled counts or bounds",
+            )
+
     require(report["schema"] == "tlaw.mutation/v1", "missing mutation evidence")
+    require(report.get("method") == method, "unexpected mutation method")
+    require(
+        report.get("max_cases") == (3 if method == "exhaustive" else None),
+        "unexpected mutation case cap",
+    )
     require(report["baseline"]["valid"] is True, "mutation baseline is invalid")
     [baseline] = report["baseline"]["obligations"]
-    require(baseline["identity"] == LAW, "missing baseline law")
-    require(baseline["status"] == "passed", "baseline law did not pass")
+    verify_obligation(baseline, status="passed", label="baseline")
     require(report["canary"]["wired"] is True, "canary did not observe mutation")
     require(report["canary"]["exit_code"] == 1, "canary was not killed by a law")
     require(report["canary"]["timed_out"] is False, "canary unexpectedly timed out")
+    [canary] = report["canary"]["obligations"]
+    verify_obligation(canary, status="failed", label="canary")
     summary = report["summary"]
     require(
         summary["runnable"] == summary["killed"] == 1
@@ -101,6 +129,8 @@ def verify_mutation(report: dict) -> None:
     failure = mutant["evidence"]
     require(failure["summary"]["status"] == "failed", "missing mutant failure")
     require(failure["summary"]["retained"] is True, "mutant failure not retained")
+    [failed_obligation] = failure["obligations"]
+    verify_obligation(failed_obligation, status="failed", label="mutant")
     [counterexample] = failure["failures"]
     require(counterexample["identity"] == LAW, "unexpected mutant failure")
     require(counterexample["capture_error"] is None, "mutant input not replayable")
@@ -172,9 +202,24 @@ def exercise(cli: Path, project: Path, environment: dict[str, str]) -> None:
     tlaw("check", "laws.py")
     tlaw("mutate", "laws.py", "implementation.py", "--json", "mutation.json")
     verify_mutation(json.loads((project / "mutation.json").read_text(encoding="utf-8")))
+    tlaw(
+        "mutate",
+        "laws.py",
+        "implementation.py",
+        "--exhaustive",
+        "--max-cases",
+        "3",
+        "--json",
+        "mutation-exhaustive.json",
+    )
+    verify_mutation(
+        json.loads((project / "mutation-exhaustive.json").read_text(encoding="utf-8")),
+        method="exhaustive",
+    )
     print("installed gate: sampled, exhaustive 3/3, counterexample JSON, replay,")
     print(
-        "installed gate: repaired replay rejected; canary and 1/1 exact mutant replay passed"
+        "installed gate: repaired replay rejected; sampled and exhaustive mutation "
+        "with canary and exact replay passed"
     )
 
 

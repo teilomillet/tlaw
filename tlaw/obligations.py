@@ -55,6 +55,23 @@ class Obligation:
         return asdict(self)
 
 
+def evidence_line(law: Obligation) -> str:
+    if law.method == "sampled":
+        return f"sampled: {law.nodeid}; total input space not enumerated"
+    bounds = ""
+    if law.list_bounds:
+        lengths = ", ".join(
+            f"{name}={bound['min_size']}..{bound['max_size']}"
+            for name, bound in law.list_bounds.items()
+        )
+        bounds = f"; lengths: {lengths}"
+    outcome = "all declared cases passed" if law.exhausted else "not exhausted"
+    return (
+        f"{law.method}: {law.nodeid}; "
+        f"{law.cases_checked}/{law.cases_total} cases checked{bounds}; {outcome}"
+    )
+
+
 def obligations_complete(obligations: tuple[Obligation, ...]) -> bool:
     """Success requires evidence for at least one fully executed law case."""
     return bool(obligations) and all(law.completed for law in obligations)
