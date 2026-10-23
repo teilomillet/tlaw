@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import subprocess
-import sys
 import tomllib
+import warnings
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+from . import _execution
 
 
 TARGET_ENV = "TLAW_TARGET"
@@ -342,6 +342,12 @@ def load_audit_spec(path: str | Path) -> AuditManifest:
 
         return load_lawbook(spec_path).to_manifest()
     if spec_path.suffix == ".toml":
+        warnings.warn(
+            "TOML audit manifests are deprecated; declare the same audit as a "
+            "Python lawbook (audit.py) instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return load_manifest(spec_path)
     raise ManifestError("audit specification must be a .py or .toml file")
 
@@ -351,43 +357,31 @@ def _failed_tests(output: str) -> tuple[str, ...]:
 
 
 def _run_candidate(manifest: AuditManifest, candidate: Candidate) -> RunResult:
-    command = (
-        sys.executable,
-        "-m",
-        "pytest",
-        *manifest.pytest_args,
-        *manifest.tests,
+    # The manifest owns its pytest selection, so unlike a law run this command
+    # keeps the project's ``addopts`` and does not load the tlaw plugin. The
+    # isolation rules that make a run reproducible are shared with check and
+    # mutate, and the target is selected through the environment as before.
+    command = _execution.pytest_argv(
+        options=(*manifest.pytest_args, *manifest.tests),
+        tlaw_owned=False,
     )
-    environment = os.environ.copy()
-    environment[TARGET_ENV] = candidate.target
-    environment.setdefault("PYTHONHASHSEED", "0")
-    environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
-    try:
-        completed = subprocess.run(
-            command,
-            cwd=manifest.root,
-            env=environment,
-            capture_output=True,
-            text=True,
-            timeout=manifest.timeout_seconds,
-            check=False,
-        )
-        output = completed.stdout + completed.stderr
-        exit_code = completed.returncode
-    except subprocess.TimeoutExpired as error:
-        stdout = (
-            error.stdout.decode() if isinstance(error.stdout, bytes) else error.stdout
-        )
-        stderr = (
-            error.stderr.decode() if isinstance(error.stderr, bytes) else error.stderr
-        )
-        output = (stdout or "") + (stderr or "") + "\ntlaw: test run timed out."
-        exit_code = 124
+    environment = _execution.child_environment(
+        update={TARGET_ENV: candidate.target},
+    )
+    run = _execution.run_pytest(
+        command,
+        cwd=manifest.root,
+        environment=environment,
+        timeout_seconds=manifest.timeout_seconds,
+    )
+    output = run.output
+    if run.timed_out:
+        output += "\ntlaw: test run timed out."
 
     return RunResult(
         name=candidate.name,
         target=candidate.target,
-        exit_code=exit_code,
+        exit_code=run.exit_code,
         failed_tests=_failed_tests(output),
         output=output,
         command=command,
