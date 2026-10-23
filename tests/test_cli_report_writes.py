@@ -40,3 +40,30 @@ def test_json_write_errors_return_two_without_a_traceback(
     assert not destination.exists()
     assert "could not write JSON report" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_unsupported_exhaustive_domain_is_reported_without_a_traceback(
+    tmp_path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    law_file = tmp_path / "laws.py"
+    law_file.write_text(
+        "import tlaw\n"
+        "\n"
+        "Reward = tlaw.number(0, 1)\n"
+        "\n"
+        "@tlaw.law\n"
+        "def stays_in_range(reward: Reward) -> bool:\n"
+        "    return 0 <= reward <= 1\n",
+        encoding="utf-8",
+    )
+
+    exit_code = main(["check", str(law_file), "--exhaustive"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    # The refusal keeps its actionable sentence and exit code; the pytest
+    # collection traceback no longer buries it.
+    assert "exhaustive checking refused this domain" in captured.err
+    assert "does not support number(0, 1)" in captured.err
+    assert "Traceback" not in captured.err
+    assert "Traceback" not in captured.out

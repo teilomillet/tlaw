@@ -71,7 +71,7 @@ def _parser() -> argparse.ArgumentParser:
         help="two-dot Git revision range to compare",
     )
     audit = subcommands.add_parser(
-        "audit", help="audit one laws.py file or legacy TOML manifest"
+        "audit", help="audit a Lawbook (or a deprecated TOML manifest)"
     )
     audit.add_argument("specification", type=Path)
     audit.add_argument(
@@ -132,6 +132,24 @@ def _write_report(path: Path, contents: str) -> None:
         path.write_text(contents, encoding="utf-8")
     except OSError as error:
         raise ManifestError(f"could not write JSON report {path}: {error}") from error
+
+
+_EXHAUSTIVE_REFUSAL = "exhaustive checking does not support "
+
+
+def _unsupported_exhaustive_domain(output: str) -> str | None:
+    """Return the actionable message from a refused exhaustive domain.
+
+    ``finite.py`` refuses an unsupported declaration while the law module is
+    imported, so pytest reports a collection traceback. The cause is correct
+    and the exit code is 2, but the traceback buries the one sentence a user
+    needs. This extracts that sentence without weakening the verdict.
+    """
+    for line in output.splitlines():
+        _, separator, message = line.partition("TypeError: ")
+        if separator and message.startswith(_EXHAUSTIVE_REFUSAL):
+            return message.strip()
+    return None
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -218,6 +236,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ManifestError as error:
             print(f"tlaw: {error}", file=sys.stderr)
             return 2
+        if args.exhaustive and result.exit_code == 2:
+            refusal = _unsupported_exhaustive_domain(result.output)
+            if refusal is not None:
+                # The collections traceback is noise: the domain refusal is
+                # complete evidence on its own. Keep the verdict and exit code
+                # identical, and leave the full output on the Python API result.
+                print(
+                    f"tlaw: exhaustive checking refused this domain: {refusal}",
+                    file=sys.stderr,
+                )
+                print(
+                    "tlaw: remove --exhaustive or declare a supported finite domain "
+                    "(bool, None, Literal, integer, one_of, bounded list_of, or "
+                    "dictionary-form record)",
+                    file=sys.stderr,
+                )
+                return 2
         print(result.output, end="" if result.output.endswith("\n") else "\n")
         if args.json_path is not None:
             if not result.report["summary"].get("retained", True):
@@ -294,6 +329,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command != "audit":
         raise AssertionError(f"unhandled command: {args.command}")
+    if args.specification.suffix == ".toml":
+        # The warning category is the library contract; this notice makes the
+        # deprecation visible under the CLI's default warning filters too.
+        print(
+            "tlaw: legacy TOML audit manifests are deprecated; "
+            "declare a Python Lawbook instead",
+            file=sys.stderr,
+        )
     try:
         result = audit(args.specification)
     except ManifestError as error:
