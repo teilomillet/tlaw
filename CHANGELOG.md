@@ -6,6 +6,15 @@ files into this document when the release is prepared.
 
 <!-- towncrier release notes start -->
 
+## 0.0.9 — 2026-10-23
+
+### Added
+
+- Add mutation campaign planning and a shared isolated-run budget with explicit
+  work estimates, unrun outcomes and unconfirmed failures that never count as
+  kills.
+
+
 ## 0.0.8 — 2026-10-23
 
 ### Added
