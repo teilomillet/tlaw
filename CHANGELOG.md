@@ -6,6 +6,14 @@ files into this document when the release is prepared.
 
 <!-- towncrier release notes start -->
 
+## 0.0.10 — 2026-10-23
+
+### Added
+
+- Add exact mutant-ID reruns with fresh isolated evidence and explicit
+  selected, excluded and unrun counts in plans and reports.
+
+
 ## 0.0.9 — 2026-10-23
 
 ### Added
