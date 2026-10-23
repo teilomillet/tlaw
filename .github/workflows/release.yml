@@ -249,12 +249,6 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-        with:
-          version: "0.11.30"
-          enable-cache: false
-
       - name: Download the verified distributions
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -274,17 +268,16 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Attest the verified distributions
-        # PEP 740: generate publish attestations for the exact files that
-        # will be uploaded; uv 0.9.12+ attaches them to the upload.
+      - name: Publish with trusted publishing and provenance
+        # The action uploads only on a real run and skips files that already
+        # exist. When id-token: write is present it also generates and uploads
+        # PEP 740 provenance attestations for exactly the files it uploads.
         if: steps.published.outputs.exists != 'true'
-        uses: astral-sh/attest-action@39b6ce43875c196a579e31635b11aa2a2036384a # v0.0.7
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
-          paths: dist/*
-
-      - name: Publish with PyPI trusted publishing
-        if: steps.published.outputs.exists != 'true'
-        run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ dist/*
+          packages-dir: dist/
+          skip-existing: true
+          attestations: true
 
       - name: Tag the release and create the GitHub Release
         env:

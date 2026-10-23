@@ -295,6 +295,12 @@ the displayed seed:
 tlaw check laws.py --search --seed 424242
 ```
 
+Check and mutation JSON also retain execution `diagnostics`: the pytest phase,
+exception type, message and formatted detail, including nested causes. These
+explain failures such as Hypothesis deadlines or fixture errors even when no
+law counterexample could be retained. Diagnostics stay separate from the
+obligations and exact counterexamples that determine the verdict.
+
 Typed replay encoding currently supports `None`, booleans, integers, floats,
 strings, bytes, lists, tuples, dictionaries, sets, and frozensets, recursively.
 If a failing input cannot be encoded without guessing, tlaw reports invalid
@@ -516,9 +522,9 @@ in [`.github/workflows/release.yml`](https://github.com/teilomillet/tlaw/blob/ma
 A release is traceable after the fact. Once the upload succeeds, the same
 workflow creates the tag `v<version>` on the release commit and a GitHub
 Release titled `tlaw <version>`, with release notes taken from that version's
-`CHANGELOG.md` section and the verified distribution files attached. Before
-`uv publish`, it generates PEP 740 provenance attestations for the exact files
-it uploads, so PyPI can verify which workflow and commit produced the
+`CHANGELOG.md` section and the verified distribution files attached. The PyPI
+publish step generates PEP 740 provenance attestations for the exact files it
+uploads, so PyPI can verify which workflow and commit produced the
 distribution.
 
 A release can be preflighted without publishing, and a failed release can be

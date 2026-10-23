@@ -20,7 +20,7 @@ def test_release_runs_the_complete_gate_before_building_artifacts() -> None:
 
     gate = workflow.index("run: ./scripts/gate")
     build = workflow.index("run: uv build --clear")
-    publish = workflow.index("run: uv publish --trusted-publishing always")
+    publish = workflow.index("uses: pypa/gh-action-pypi-publish@")
 
     assert workflow.count("run: ./scripts/gate") == 1
     assert gate < build < publish
@@ -31,14 +31,18 @@ def test_release_attests_the_verified_distributions_before_upload() -> None:
     workflow = _release_workflow()
 
     download = workflow.index("uses: actions/download-artifact@")
-    attest = workflow.index("uses: astral-sh/attest-action@")
-    publish = workflow.index("run: uv publish --trusted-publishing always")
+    publish = workflow.index("uses: pypa/gh-action-pypi-publish@")
 
-    # PEP 740: the attestations must describe the downloaded, verified files,
-    # and uv must see them before it uploads.
-    assert download < attest < publish
-    assert re.search(r"uses: astral-sh/attest-action@[0-9a-f]{40}\b", workflow)
-    assert "paths: dist/*" in workflow
+    # PEP 740: the publish action attests exactly the downloaded, verified
+    # files while uploading them; id-token powers both trusted publishing and
+    # the attestations.
+    assert download < publish
+    assert re.search(
+        r"uses: pypa/gh-action-pypi-publish@[0-9a-f]{40}\b", workflow
+    )
+    assert "packages-dir: dist/" in workflow
+    assert "attestations: true" in workflow
+    assert "skip-existing: true" in workflow
     assert "id-token: write" in workflow
 
 
@@ -56,7 +60,7 @@ def test_release_creates_a_tag_and_github_release_from_the_changelog() -> None:
 def test_release_upload_and_github_release_are_rerunnable() -> None:
     workflow = _release_workflow()
 
-    assert "--check-url https://pypi.org/simple/" in workflow
+    assert "skip-existing: true" in workflow
     assert "already on PyPI" in workflow
     assert "gh release view" in workflow
     assert "gh release upload" in workflow
