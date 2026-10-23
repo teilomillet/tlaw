@@ -113,13 +113,75 @@ Every generated mutation needs one explicit outcome:
   never a kill and never a law success;
 - **error:** execution evidence was missing, incomplete, or inconsistent;
   a refutation could not be retained; or confirmation failed to reproduce the
-  exact law failure or the calibrated timeout; or
+  exact law failure or the calibrated timeout;
+- **not run:** the candidate was not executed because planning was requested,
+  the run budget stopped execution, or the baseline or canary did not establish
+  the prerequisites; and
 - **unresolved equivalent:** a survivor whose committed ledger entry explains
   why the change is not observable within the declared boundary.
 
 Invalid and error outcomes are not kills. Equivalent mutations are generally
 undecidable automatically; a survivor is a prompt for investigation, not proof
 that the laws are weak.
+
+### Campaign planning and run budgets
+
+Plan a campaign before running its canary or mutants:
+
+```console
+tlaw mutate laws.py implementation.py --exhaustive --plan --json plan.json
+```
+
+Planning executes one isolated baseline. It establishes the law inventory,
+finite case counts and list bounds using the same runner as a normal campaign;
+it is not a side-effect-free collection command. No canary or candidate is run.
+A valid requested plan exits `0`, but reports `complete: false` and establishes
+no mutation evidence. An invalid baseline or no generated challenges still
+exits `2`.
+
+The plan counts generated and compiling mutants and reports the full campaign's
+isolated-run range. For `R` compiling mutants and at least one generated
+challenge, that range is `2 + R` through `2 + 3R`: one baseline and one canary,
+then one invocation per survivor, two per observed kill including exact replay,
+or three per timeout kill including its fresh baseline and retry. These
+estimates assume the baseline and canary pass their prerequisites. Syntax-invalid
+mutants consume no child runs. With no generated mutations, the range is `1..1`.
+
+For exhaustive campaigns, the plan also sums the declared cases across all
+collected law items, including parametrizations, and multiplies that sum by the
+maximum run count for a conservative law-case-attempt bound. This assumes the
+baseline inventory and domains remain unchanged. Failures may stop early;
+exact replay uses only retained inputs. Sampled input counts remain unknown.
+Neither count estimates Python operations, ordinary pytest tests, CPU time,
+memory, or the size of an individual input.
+
+Apply one shared budget to every isolated pytest invocation:
+
+```console
+tlaw mutate laws.py implementation.py --exhaustive --max-runs 20 --json mutations.json
+```
+
+The Python API accepts `plan_only=True` and `max_runs=20`. `max_runs` must be a
+positive integer and includes the initial baseline, canary, candidates, exact
+replays, fresh timeout baselines and timeout retries. The default has no run
+limit. A separate planning invocation does not spend a later invocation's
+budget; the later campaign measures its own fresh baseline.
+
+Before each run, tlaw checks the remaining budget before copying the boundary.
+It never shortens a calibrated deadline to fit the campaign budget. A stop
+before a candidate leaves it `not-run`; a stop before confirmation leaves the
+executed candidate as an `error`, retaining its first observation without
+crediting a kill or law attribution. The remaining candidates are unrun. A
+budget stop exits `2`; fully completing at the exact limit does not constitute
+a stop.
+
+JSON `plan` retains the estimates, while `work` records `max_runs`,
+`runs_started`, `runs_remaining` and the first blocked `stopped_before` phase
+and mutant ID. `summary.not_run` counts untouched candidates and
+`summary.complete` distinguishes completed campaigns from plans and incomplete
+execution. Text reports the same information and lists every unrun mutant.
+An unrun equivalence declaration remains unverified, not contradicted or a
+substitute for execution.
 
 An exception and an infinite loop are behavior, not infrastructure: only a
 timeout with no measured baseline to calibrate it would be an error, and the

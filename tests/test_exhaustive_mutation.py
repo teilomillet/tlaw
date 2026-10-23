@@ -220,7 +220,7 @@ def observes_boundary(item):
     assert result.canary is None
     assert result.has_errors
     assert result.killed_count == result.survived_count == 0
-    assert all(run.outcome is MutationOutcome.ERROR for run in result.runs)
+    assert all(run.outcome is MutationOutcome.NOT_RUN for run in result.runs)
 
 
 @pytest.mark.parametrize("limit", [0, -1, True, 1.5, "6"])

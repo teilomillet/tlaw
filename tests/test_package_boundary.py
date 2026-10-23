@@ -122,7 +122,9 @@ def test_mutating_a_package_module_kills_its_mutants(tmp_path: Path) -> None:
         for test in run.failed_tests:
             assert test.startswith("laws.py::")
             assert ".." not in test
-    assert ".." not in result.render_text()
+    # Numeric plan ranges may contain ".."; relative path climbs must not.
+    assert "../" not in result.render_text()
+    assert "..\\" not in result.render_text()
 
 
 def test_project_root_laws_still_observe_the_copied_package(tmp_path: Path) -> None:

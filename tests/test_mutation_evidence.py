@@ -58,7 +58,7 @@ def another_obligation(flag: bool):
     assert len(result.baseline.obligations) == 2
     assert result.canary is None
     assert result.killed_count == result.survived_count == 0
-    assert all(run.outcome is MutationOutcome.ERROR for run in result.runs)
+    assert all(run.outcome is MutationOutcome.NOT_RUN for run in result.runs)
 
 
 def test_ordinary_pytest_success_is_not_a_law_baseline(tmp_path: Path) -> None:

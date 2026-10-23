@@ -88,7 +88,7 @@ import sys
 import tempfile
 import time
 import tomllib
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Literal
@@ -115,7 +115,7 @@ from .replay import (
 
 
 class MutationOutcome(Enum):
-    """The five honest outcomes from docs/mutation-evidence.md.
+    """The honest outcomes from docs/mutation-evidence.md.
 
     Invalid and error are never kills; an unresolved equivalent is a
     survivor with a committed explanation, still visible in every report.
@@ -125,6 +125,7 @@ class MutationOutcome(Enum):
     SURVIVED = "survived"
     INVALID = "invalid"
     ERROR = "error"
+    NOT_RUN = "not-run"
     UNRESOLVED_EQUIVALENT = "unresolved-equivalent"
 
 
@@ -681,7 +682,8 @@ class MutantRun:
     """One mutant's final outcome plus the evidence behind it.
 
     ``exit_code`` is None when the mutant never ran (it failed to compile,
-    or the baseline was invalid). ``failed_tests`` names the exact laws
+    a prerequisite failed, planning was requested, or the budget stopped it).
+    ``failed_tests`` names the exact laws
     that rejected the mutant, so a law change can later say which
     survivors it kills.
 
@@ -741,11 +743,47 @@ def apply_equivalence_ledger(
         outcome = outcomes.get(mutation_id)
         if outcome is None:
             stale.append((mutation_id, "no generated mutation has this ID"))
-        elif outcome is not MutationOutcome.SURVIVED:
+        elif outcome not in (MutationOutcome.SURVIVED, MutationOutcome.NOT_RUN):
             stale.append(
                 (mutation_id, f"contradicted by evidence: mutant was {outcome.value}")
             )
     return tuple(updated), tuple(stale)
+
+
+@dataclass(frozen=True)
+class CampaignPlan:
+    """Full-campaign estimates, conditional on passing baseline and canary.
+
+    Runs count isolated pytest invocations, not seconds or memory. Finite
+    case attempts assume the baseline law inventory and domains stay intact.
+    """
+
+    generated_mutations: int
+    runnable_mutations: int
+    law_cases: int
+    cases_per_run: int | None
+    min_runs: int
+    max_runs: int
+    max_case_attempts: int | None
+
+
+class _RunLimitReached(Exception):
+    """A scheduling decision, never a calibrated subprocess timeout."""
+
+
+@dataclass
+class _RunBudget:
+    """One owner for all isolated invocations in a campaign."""
+
+    max_runs: int | None
+    runs_started: int = 0
+    stopped_before: str | None = None
+
+    def require_available(self, purpose: str) -> None:
+        if self.max_runs is not None and self.runs_started >= self.max_runs:
+            if self.stopped_before is None:
+                self.stopped_before = purpose
+            raise _RunLimitReached(f"campaign run budget exhausted before {purpose}")
 
 
 @dataclass(frozen=True)
@@ -772,12 +810,16 @@ class MutationResult:
     budget_seconds: float = 0.0
     timeout_multiplier: float = 0.0
     timeout_floor_seconds: float = 0.0
-    # None only when the canary never ran: no mutations to score, or the
-    # baseline was already invalid. When mutants were scored, the canary
-    # ran first — it is a default, not an option, so a user who has never
-    # heard of it is still protected from unwired evidence.
+    # None when the canary never ran: no mutations to score, an invalid
+    # baseline, plan-only mode, or an exhausted run budget. Every scored
+    # mutant requires the canary to establish wiring first.
     canary: CanaryRun | None = None
     max_cases: int | None = None
+    plan: CampaignPlan | None = None
+    plan_only: bool = False
+    max_runs: int | None = None
+    runs_started: int = 0
+    stopped_before: str | None = None
 
     @property
     def method(self) -> Literal["sampled", "exhaustive"]:
@@ -827,9 +869,17 @@ class MutationResult:
         return self._count(MutationOutcome.ERROR)
 
     @property
+    def not_run_count(self) -> int:
+        return self._count(MutationOutcome.NOT_RUN)
+
+    @property
+    def complete(self) -> bool:
+        return not self.plan_only and not self.has_errors
+
+    @property
     def runnable_total(self) -> int:
-        # Invalid and error runs are excluded: they produced no evidence
-        # about the laws, in either direction.
+        # Invalid, error and unrun candidates produced no evidence about the
+        # laws, in either direction, so they stay outside the denominator.
         return (
             self.killed_count + self.survived_count + self.unresolved_equivalent_count
         )
@@ -843,22 +893,41 @@ class MutationResult:
             or canary_failed
             or no_challenges
             or self.error_count > 0
+            or (self.not_run_count > 0 and not self.plan_only)
+            or self.stopped_before is not None
         )
 
     @property
     def statement(self) -> str:
         if not self.runs:
             return "No supported mutations were generated; no mutation evidence exists."
-        return (
+        if self.plan_only:
+            return "Campaign plan only; no mutation evidence was established."
+        statement = (
             f"Killed {self.killed_count} of {self.runnable_total} "
             "runnable generated mutations."
         )
+        if self.not_run_count or self.stopped_before is not None:
+            statement += (
+                f" Campaign incomplete; {self.not_run_count} mutations not run."
+            )
+        return statement
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "schema": "tlaw.mutation/v1",
             "method": self.method,
             "max_cases": self.max_cases,
+            "plan_only": self.plan_only,
+            "plan": None if self.plan is None else asdict(self.plan),
+            "work": {
+                "max_runs": self.max_runs,
+                "runs_started": self.runs_started,
+                "runs_remaining": (
+                    None if self.max_runs is None else self.max_runs - self.runs_started
+                ),
+                "stopped_before": self.stopped_before,
+            },
             "laws": self.laws,
             "implementation": self.implementation,
             "boundary": {"kind": self.boundary_kind, "module": self.module_name},
@@ -923,6 +992,8 @@ class MutationResult:
                 "unresolved_equivalent": self.unresolved_equivalent_count,
                 "invalid": self.invalid_count,
                 "errors": self.error_count,
+                "not_run": self.not_run_count,
+                "complete": self.complete,
                 "runnable": self.runnable_total,
                 "generated": len(self.runs),
                 "statement": self.statement,
@@ -959,6 +1030,32 @@ class MutationResult:
             f"{len(self.baseline.obligations)} completed"
         )
         lines.extend(f"  {evidence_line(law)}" for law in self.baseline.obligations)
+        if self.plan is not None:
+            plan = self.plan
+            lines.append(
+                f"Campaign plan: generated mutations {plan.generated_mutations}; "
+                f"compiling mutations {plan.runnable_mutations}; law cases {plan.law_cases}"
+            )
+            lines.append(
+                f"Planned isolated runs: {plan.min_runs}..{plan.max_runs} "
+                "for the full campaign, including baseline, canary and confirmations"
+            )
+            if plan.cases_per_run is None:
+                lines.append("Planned law input counts: unknown (sampled checks)")
+            else:
+                lines.append(
+                    f"Planned finite law cases per ordinary run: {plan.cases_per_run}; "
+                    f"full-campaign case attempts at most {plan.max_case_attempts} "
+                    "if the baseline inventory and domains remain unchanged"
+                )
+        else:
+            lines.append("Campaign plan unavailable")
+        limit = "unlimited" if self.max_runs is None else str(self.max_runs)
+        lines.append(f"Isolated runs started: {self.runs_started}; run budget: {limit}")
+        if self.plan_only:
+            lines.append("Plan only: baseline executed; canary and mutants not run")
+        if self.stopped_before is not None:
+            lines.append(f"Run budget exhausted before {self.stopped_before}")
         if self.baseline.evidence_error:
             lines.append(f"Baseline evidence: {self.baseline.evidence_error}")
         if self.canary is not None:
@@ -982,6 +1079,7 @@ class MutationResult:
             MutationOutcome.SURVIVED: "SURVIVED",
             MutationOutcome.INVALID: "INVALID",
             MutationOutcome.ERROR: "ERROR",
+            MutationOutcome.NOT_RUN: "NOT RUN",
             MutationOutcome.UNRESOLVED_EQUIVALENT: "UNRESOLVED EQUIVALENT",
         }
         if not self.runs:
@@ -1012,6 +1110,7 @@ class MutationResult:
                 f" {self.killed_by_timeout_count}"
             )
         lines.append(f"Survivors: {self.survived_count}")
+        lines.append(f"Mutations not run: {self.not_run_count}")
         lines.append(
             f"Unresolved equivalent candidates: {self.unresolved_equivalent_count}"
         )
@@ -1232,6 +1331,8 @@ def _run_pytest_in_copy(
     timeout_seconds: float,
     replay_evidence: dict[str, Any] | None = None,
     max_cases: int | None = None,
+    work: _RunBudget | None = None,
+    purpose: str = "law run",
 ) -> _PytestRun:
     """Run the laws once against a fresh copy of the boundary.
 
@@ -1242,6 +1343,8 @@ def _run_pytest_in_copy(
     the copy, so the laws import it the same way they import the true
     implementation.
     """
+    if work is not None:
+        work.require_available(purpose)
     command = (
         sys.executable,
         "-m",
@@ -1353,6 +1456,8 @@ def _run_pytest_in_copy(
             environment[REPLAY_ENV] = str(report_path)
             environment[REPLAY_ROOT_ENV] = str(law_file.parent)
 
+        if work is not None:
+            work.runs_started += 1
         started = time.monotonic()
         try:
             completed = subprocess.run(
@@ -1547,12 +1652,15 @@ def _run_one_mutant(
     timeout_multiplier: float,
     expected: tuple[Obligation, ...],
     max_cases: int | None = None,
+    work: _RunBudget | None = None,
 ) -> MutantRun:
     executed = _run_pytest_in_copy(
         boundary,
         mutated_source=mutation.mutated_source,
         timeout_seconds=budget_seconds,
         max_cases=max_cases,
+        work=work,
+        purpose=f"mutant {mutation.mutation_id}",
     )
     outcome, kill_kind, note = classify_mutant_exit(
         executed.exit_code, timed_out=executed.timed_out
@@ -1623,6 +1731,7 @@ def _confirm_kill(
     baseline_timeout_seconds: float,
     expected: tuple[Obligation, ...],
     max_cases: int | None = None,
+    work: _RunBudget | None = None,
 ) -> MutantRun:
     """Confirm retained failures exactly, or repeat a freshly timed timeout.
 
@@ -1632,12 +1741,17 @@ def _confirm_kill(
     it, so contention cannot turn two slow runs into a confirmed kill.
     """
     if run.kill_kind is KillKind.TIMEOUT:
-        fresh = _run_pytest_in_copy(
-            boundary,
-            mutated_source=None,
-            timeout_seconds=baseline_timeout_seconds,
-            max_cases=max_cases,
-        )
+        try:
+            fresh = _run_pytest_in_copy(
+                boundary,
+                mutated_source=None,
+                timeout_seconds=baseline_timeout_seconds,
+                max_cases=max_cases,
+                work=work,
+                purpose=f"timeout baseline for {mutation.mutation_id}",
+            )
+        except _RunLimitReached as error:
+            return _kill_did_not_replay(run, f"confirmation not run: {error}")
         problem = _evidence_problem(fresh, expected=expected, max_cases=max_cases)
         if (
             fresh.exit_code != 0
@@ -1663,13 +1777,19 @@ def _confirm_kill(
         replay_evidence = run.evidence
         method = "exact"
 
-    replay = _run_pytest_in_copy(
-        boundary,
-        mutated_source=mutation.mutated_source,
-        timeout_seconds=replay_budget,
-        replay_evidence=replay_evidence,
-        max_cases=max_cases if replay_evidence is None else None,
-    )
+    purpose = "timeout retry" if method == "timeout" else "exact replay"
+    try:
+        replay = _run_pytest_in_copy(
+            boundary,
+            mutated_source=mutation.mutated_source,
+            timeout_seconds=replay_budget,
+            replay_evidence=replay_evidence,
+            max_cases=max_cases if replay_evidence is None else None,
+            work=work,
+            purpose=f"{purpose} for {mutation.mutation_id}",
+        )
+    except _RunLimitReached as error:
+        return _kill_did_not_replay(run, f"confirmation not run: {error}")
     run = replace(
         run,
         replay_method=method,
@@ -1708,6 +1828,8 @@ def mutate(
     baseline_timeout_seconds: float = 60.0,
     exhaustive: bool = False,
     max_cases: int | None = None,
+    plan_only: bool = False,
+    max_runs: int | None = None,
 ) -> MutationResult:
     """Challenge one laws file with generated mutations of one module.
 
@@ -1721,6 +1843,11 @@ def mutate(
     ordinary run, with ``max_cases`` combinations per law case (default 1,000).
     Exact replay executes only retained inputs. A survivor exhausts the declared
     space; a failing law records how many cases it checked before stopping.
+
+    ``plan_only=True`` executes one baseline to establish a campaign plan,
+    then leaves mutants unrun. ``max_runs`` caps all isolated pytest invocations,
+    including baseline, canary and confirmations. It does not alter calibrated
+    deadlines. An unconfirmed candidate is never credited as a kill.
 
     Evidence flow (docs/mutation-evidence.md, with the encoded rules):
 
@@ -1759,6 +1886,9 @@ def mutate(
     if exhaustive and max_cases is None:
         max_cases = DEFAULT_MAX_CASES
 
+    if max_runs is not None and (type(max_runs) is not int or max_runs <= 0):
+        raise ValueError("max_runs must be a positive integer")
+
     ledger = load_equivalence_ledger(equivalents) if equivalents else {}
     boundary = describe_boundary(laws_path, implementation_path)
     implementation_source = implementation_path.read_text(encoding="utf-8")
@@ -1769,11 +1899,17 @@ def mutate(
             f"cannot parse implementation {implementation_path}: {error}"
         ) from error
 
+    work = _RunBudget(max_runs)
+    plan: CampaignPlan | None = None
+    budget_seconds = 0.0
+    compilation_errors: dict[str, str] = {}
     baseline_run = _run_pytest_in_copy(
         boundary,
         mutated_source=None,
         timeout_seconds=baseline_timeout_seconds,
         max_cases=max_cases,
+        work=work,
+        purpose="baseline",
     )
     baseline = BaselineRun(
         exit_code=baseline_run.exit_code,
@@ -1785,17 +1921,9 @@ def mutate(
         evidence_error=_evidence_problem(baseline_run, max_cases=max_cases),
     )
 
-    if not baseline.valid:
-        # Rule 1 precondition failed: nothing can be attributed to any
-        # mutation, so no mutant may be scored in either direction.
-        runs = tuple(
-            MutantRun(
-                mutation=mutation,
-                outcome=MutationOutcome.ERROR,
-                note="not run: the baseline run was invalid",
-            )
-            for mutation in mutations
-        )
+    def finish(
+        runs: tuple[MutantRun, ...], canary: CanaryRun | None = None
+    ) -> MutationResult:
         runs, stale = apply_equivalence_ledger(runs, ledger)
         return MutationResult(
             laws=str(laws_path),
@@ -1806,28 +1934,78 @@ def mutate(
             baseline=baseline,
             runs=runs,
             stale_ledger_entries=stale,
-            budget_seconds=0.0,
+            budget_seconds=budget_seconds,
             timeout_multiplier=timeout_multiplier,
             timeout_floor_seconds=timeout_floor_seconds,
+            canary=canary,
+            plan=plan,
+            plan_only=plan_only,
+            max_runs=work.max_runs,
+            runs_started=work.runs_started,
+            stopped_before=work.stopped_before,
         )
 
+    def unrun(mutation: Mutation, reason: str) -> MutantRun:
+        problem = compilation_errors.get(mutation.mutation_id)
+        if problem is not None:
+            return MutantRun(
+                mutation, MutationOutcome.INVALID, f"mutant does not compile: {problem}"
+            )
+        return MutantRun(mutation, MutationOutcome.NOT_RUN, f"not run: {reason}")
+
+    if not baseline.valid:
+        return finish(
+            tuple(unrun(mutation, "baseline was invalid") for mutation in mutations)
+        )
+
+    # Compilation has no child process. Check once so planning and execution
+    # agree about which generated candidates can consume a run.
+    for mutation in mutations:
+        try:
+            compile(mutation.mutated_source, f"<mutant {mutation.mutation_id}>", "exec")
+        except SyntaxError as error:
+            compilation_errors[mutation.mutation_id] = str(error)
+
+    runnable = len(mutations) - len(compilation_errors)
+    preparation_runs = 1 + bool(mutations)  # Baseline, and canary if challenges exist.
+    totals = tuple(law.cases_total for law in baseline.obligations)
+    cases_per_run = (
+        None
+        if any(total is None for total in totals)
+        else sum(total for total in totals if total is not None)
+    )
+    maximum_runs = preparation_runs + 3 * runnable
+    plan = CampaignPlan(
+        generated_mutations=len(mutations),
+        runnable_mutations=runnable,
+        law_cases=len(baseline.obligations),
+        cases_per_run=cases_per_run,
+        min_runs=preparation_runs + runnable,
+        max_runs=maximum_runs,
+        max_case_attempts=None
+        if cases_per_run is None
+        else cases_per_run * maximum_runs,
+    )
     budget_seconds = max(
         timeout_floor_seconds, timeout_multiplier * baseline.duration_seconds
     )
+    if plan_only:
+        return finish(tuple(unrun(mutation, "plan only") for mutation in mutations))
 
-    # The canary runs before any mutant is scored, by default and with no
-    # opt-out: it is the guard for the silent worst case, where laws
-    # import an installed package instead of the boundary module and
-    # every mutant would falsely "survive". A user who has never heard of
-    # the canary is exactly who it protects.
+    # The mandatory canary establishes wiring before any candidate is scored.
     canary: CanaryRun | None = None
     if mutations:
-        canary_run = _run_pytest_in_copy(
-            boundary,
-            mutated_source=poison_source(implementation_source),
-            timeout_seconds=budget_seconds,
-            max_cases=max_cases,
-        )
+        try:
+            canary_run = _run_pytest_in_copy(
+                boundary,
+                mutated_source=poison_source(implementation_source),
+                timeout_seconds=budget_seconds,
+                max_cases=max_cases,
+                work=work,
+                purpose="canary",
+            )
+        except _RunLimitReached as error:
+            return finish(tuple(unrun(mutation, str(error)) for mutation in mutations))
         if canary_run.timed_out:
             canary_problem = None
             canary_note = f"calibrated timeout after {budget_seconds:.1f}s"
@@ -1854,61 +2032,39 @@ def mutate(
             evidence_error=canary_problem,
         )
         if canary.wired is not True:
-            # No mutant may be scored in either direction: survivors
-            # would be unwired noise and kills would be luck.
-            runs = tuple(
-                MutantRun(
-                    mutation=mutation,
-                    outcome=MutationOutcome.ERROR,
-                    note="not run: the canary was not killed, so mutant"
-                    " outcomes would not be attributable",
-                )
-                for mutation in mutations
-            )
-            runs, stale = apply_equivalence_ledger(runs, ledger)
-            return MutationResult(
-                laws=str(laws_path),
-                implementation=str(implementation_path),
-                module_name=boundary.module_name,
-                boundary_kind="package" if boundary.is_package else "directory",
-                max_cases=max_cases,
-                baseline=baseline,
-                runs=runs,
-                stale_ledger_entries=stale,
-                budget_seconds=budget_seconds,
-                timeout_multiplier=timeout_multiplier,
-                timeout_floor_seconds=timeout_floor_seconds,
-                canary=canary,
+            return finish(
+                tuple(
+                    unrun(mutation, "canary did not establish wiring")
+                    for mutation in mutations
+                ),
+                canary,
             )
 
     finished: list[MutantRun] = []
     for mutation in mutations:
-        try:
-            compile(mutation.mutated_source, f"<mutant {mutation.mutation_id}>", "exec")
-        except SyntaxError as error:
+        if mutation.mutation_id in compilation_errors:
+            finished.append(unrun(mutation, "does not compile"))
+            continue
+        if work.stopped_before is not None:
             finished.append(
-                MutantRun(
-                    mutation=mutation,
-                    outcome=MutationOutcome.INVALID,
-                    note=f"mutant does not compile: {error}",
-                )
+                unrun(mutation, f"campaign stopped before {work.stopped_before}")
             )
             continue
-
-        run = _run_one_mutant(
-            boundary,
-            mutation,
-            budget_seconds=budget_seconds,
-            baseline_duration=baseline.duration_seconds,
-            timeout_multiplier=timeout_multiplier,
-            expected=baseline.obligations,
-            max_cases=max_cases,
-        )
+        try:
+            run = _run_one_mutant(
+                boundary,
+                mutation,
+                budget_seconds=budget_seconds,
+                baseline_duration=baseline.duration_seconds,
+                timeout_multiplier=timeout_multiplier,
+                expected=baseline.obligations,
+                max_cases=max_cases,
+                work=work,
+            )
+        except _RunLimitReached as error:
+            finished.append(unrun(mutation, str(error)))
+            continue
         if run.outcome is MutationOutcome.KILLED:
-            # Rule 3: a kill that does not replay is an error, and what
-            # counts as replaying is kind and attribution, not the label.
-            # This is deliberately the less flattering direction — tlaw
-            # claims less strength instead of counting luck.
             run = _confirm_kill(
                 boundary,
                 mutation,
@@ -1920,21 +2076,7 @@ def mutate(
                 baseline_timeout_seconds=baseline_timeout_seconds,
                 expected=baseline.obligations,
                 max_cases=max_cases,
+                work=work,
             )
         finished.append(run)
-
-    runs, stale = apply_equivalence_ledger(tuple(finished), ledger)
-    return MutationResult(
-        laws=str(laws_path),
-        implementation=str(implementation_path),
-        module_name=boundary.module_name,
-        boundary_kind="package" if boundary.is_package else "directory",
-        max_cases=max_cases,
-        baseline=baseline,
-        runs=runs,
-        stale_ledger_entries=stale,
-        budget_seconds=budget_seconds,
-        timeout_multiplier=timeout_multiplier,
-        timeout_floor_seconds=timeout_floor_seconds,
-        canary=canary,
-    )
+    return finish(tuple(finished), canary)

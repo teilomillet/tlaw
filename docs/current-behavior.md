@@ -945,6 +945,35 @@ invalidate the baseline without falling back to sampling. Exact replay still
 executes only retained inputs. See [mutation evidence](mutation-evidence.md#exhaustive-finite-inputs)
 for the scope and limits.
 
+Campaign planning and a shared run budget are explicit:
+
+```console
+tlaw mutate laws.py implementation.py --exhaustive --plan --json plan.json
+tlaw mutate laws.py implementation.py --exhaustive --max-runs 20 --json mutations.json
+```
+
+`--plan` executes one isolated baseline, reports its inventory and finite
+bounds/counts plus the campaign's estimated run range, and leaves the canary and
+candidates unrun. It exits `0` for a valid requested plan without claiming
+mutation evidence. The Python API uses `plan_only=True`.
+
+`--max-runs` / `max_runs` limits isolated pytest invocations across the whole
+campaign, including baseline, canary and every confirmation phase. It does not
+limit elapsed time or memory and never clips calibrated deadlines. A budget
+stop returns `2`, identifies the first blocked phase and mutant, and leaves
+untouched candidates `not-run`. A candidate whose confirmation cannot run is
+an `error`, with its original observation retained but no credited kill. Failed
+baseline or canary prerequisites also leave candidates `not-run`.
+
+JSON `plan` records full-campaign estimates conditional on passing prerequisites;
+sampled input totals remain `null`. `work` records the run cap, started and
+remaining invocations, and `stopped_before`. `summary.not_run` and
+`summary.complete` expose work left unrun and whether a campaign completed.
+Plans always have `complete: false`. Unrun candidates stay outside the runnable
+denominator, and an unrun equivalence declaration is unverified rather than
+contradicted. See [planning and budgets](mutation-evidence.md#campaign-planning-and-run-budgets)
+for the counting rules.
+
 The law-first feature workflow built on these guarantees — laws before
 implementation, in a flat mutate-ready folder — is demonstrated end to end
 in [examples/score_weights](../examples/score_weights/README.md), including
@@ -970,8 +999,8 @@ The top-level package exports `law`, `system`, `same`, `raises`, `returns`,
 `integer`, `one_of`, `list_of`, `recursive`, `record`, `depends`, `check`,
 `check_folder`,
 `discover_law_files`, `replay`, `diff`, `audit`, and `mutate`, plus their result
-and error types, including `FolderCheckResult`. Runner functions return
-structured objects with text and JSON renderers where applicable.
+and error types, including `FolderCheckResult` and `CampaignPlan`. Runner
+functions return structured objects with text and JSON renderers where applicable.
 `AuditResult.enforce()`
 raises `tlaw.EnforcementError` unless the declared audit is sufficient.
 Mutation results deliberately have no broad "correct" or "covered" verdict;

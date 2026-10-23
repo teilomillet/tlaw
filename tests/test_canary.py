@@ -174,7 +174,8 @@ def test_unwired_laws_are_reported_as_invalid_evidence_not_survivors(
     # because nothing was scored at all.
     assert result.survived_count == 0
     assert result.killed_count == 0
-    assert all(run.outcome is MutationOutcome.ERROR for run in result.runs)
+    assert all(run.outcome is MutationOutcome.NOT_RUN for run in result.runs)
+    assert result.not_run_count == len(result.runs)
     assert all("canary" in run.note for run in result.runs)
 
     text = result.render_text()

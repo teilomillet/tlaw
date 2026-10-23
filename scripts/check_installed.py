@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+from typing import Literal
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -147,6 +148,123 @@ def verify_mutation(report: dict, *, method: str = "sampled") -> None:
     )
 
 
+def verify_campaign_budget(
+    report: dict, *, stage: Literal["plan", "blocked", "complete"]
+) -> None:
+    """Check the worked example's plan and each run-budget boundary."""
+    limits = {"plan": 1, "blocked": 3, "complete": 4}
+    require(report["schema"] == "tlaw.mutation/v1", "missing campaign evidence")
+    require(
+        report.get("method") == "exhaustive" and report.get("max_cases") == 3,
+        "campaign does not use the requested finite domain",
+    )
+    require(
+        report.get("plan")
+        == {
+            "generated_mutations": 1,
+            "runnable_mutations": 1,
+            "law_cases": 1,
+            "cases_per_run": 3,
+            "min_runs": 3,
+            "max_runs": 5,
+            "max_case_attempts": 15,
+        },
+        "unexpected campaign plan",
+    )
+    require(report["baseline"]["valid"] is True, "campaign baseline is invalid")
+    [baseline] = report["baseline"]["obligations"]
+    require(
+        baseline["identity"] == LAW
+        and baseline["status"] == "passed"
+        and baseline["method"] == "exhaustive"
+        and baseline["cases_checked"] == baseline["cases_total"] == 3
+        and baseline["exhausted"] is True
+        and baseline["list_bounds"] == {},
+        "campaign baseline did not exhaust 3/3 cases",
+    )
+    [mutant] = report["mutations"]
+    require(
+        report.get("work")
+        == {
+            "max_runs": limits[stage],
+            "runs_started": limits[stage],
+            "runs_remaining": 0,
+            "stopped_before": (
+                f"exact replay for {mutant['id']}" if stage == "blocked" else None
+            ),
+        },
+        "unexpected campaign work accounting",
+    )
+    summary = report["summary"]
+    require(report.get("plan_only") is (stage == "plan"), "wrong planning mode")
+    require(
+        summary.get("complete") is (stage == "complete")
+        and summary.get("not_run") == (1 if stage == "plan" else 0),
+        "unexpected campaign completion or unrun count",
+    )
+    if stage == "complete":
+        verify_mutation(report, method="exhaustive")
+        return
+    require(
+        summary["generated"] == 1
+        and summary["killed"] == summary["runnable"] == 0
+        and summary["survived"] == summary["unresolved_equivalent"] == 0
+        and summary["invalid"] == 0
+        and summary["errors"] == (1 if stage == "blocked" else 0)
+        and summary["has_errors"] is (stage == "blocked"),
+        "unfinished campaign claims a mutation outcome",
+    )
+    require(
+        mutant["kill_kind"] is None
+        and mutant["failed_tests"] == []
+        and mutant["replay_evidence"] == {}
+        and all(
+            mutant[field] is None
+            for field in (
+                "replay_method",
+                "replay_exit_code",
+                "replay_timed_out",
+                "replay_duration_seconds",
+            )
+        ),
+        "unrun confirmation claims a kill or replay evidence",
+    )
+    if stage == "plan":
+        require(report["canary"] is None, "plan unexpectedly ran its canary")
+        require(
+            mutant["outcome"] == "not-run"
+            and mutant["exit_code"] is None
+            and mutant["evidence"] == {},
+            "plan unexpectedly ran its mutant",
+        )
+    else:
+        require(report["canary"]["wired"] is True, "budgeted canary was not wired")
+        require(
+            mutant["outcome"] == "error" and "confirmation not run" in mutant["note"],
+            "unconfirmed failure was not reported as an error",
+        )
+        failure = mutant["evidence"]
+        [obligation] = failure["obligations"]
+        require(
+            failure["summary"]["status"] == "failed"
+            and failure["summary"]["retained"] is True
+            and obligation["identity"] == LAW
+            and obligation["method"] == "exhaustive"
+            and obligation["status"] == "failed"
+            and obligation["cases_checked"] == 1
+            and obligation["cases_total"] == 3
+            and obligation["exhausted"] is False
+            and obligation["list_bounds"] == {},
+            "unconfirmed failure history was not retained",
+        )
+        [counterexample] = failure["failures"]
+        require(
+            counterexample["identity"] == LAW
+            and counterexample["capture_error"] is None,
+            "unconfirmed counterexample was not retained",
+        )
+
+
 def exercise(cli: Path, project: Path, environment: dict[str, str]) -> None:
     def tlaw(*arguments: str, expected_exit: int = 0) -> str:
         return run(
@@ -202,6 +320,27 @@ def exercise(cli: Path, project: Path, environment: dict[str, str]) -> None:
     tlaw("check", "laws.py")
     tlaw("mutate", "laws.py", "implementation.py", "--json", "mutation.json")
     verify_mutation(json.loads((project / "mutation.json").read_text(encoding="utf-8")))
+    for stage, arguments, expected_exit in (
+        ("plan", ["--plan", "--max-runs", "1"], 0),
+        ("blocked", ["--max-runs", "3"], 2),
+    ):
+        report_name = f"campaign-{stage}.json"
+        tlaw(
+            "mutate",
+            "laws.py",
+            "implementation.py",
+            "--exhaustive",
+            "--max-cases",
+            "3",
+            *arguments,
+            "--json",
+            report_name,
+            expected_exit=expected_exit,
+        )
+        verify_campaign_budget(
+            json.loads((project / report_name).read_text(encoding="utf-8")),
+            stage=stage,
+        )
     tlaw(
         "mutate",
         "laws.py",
@@ -209,18 +348,21 @@ def exercise(cli: Path, project: Path, environment: dict[str, str]) -> None:
         "--exhaustive",
         "--max-cases",
         "3",
+        "--max-runs",
+        "4",
         "--json",
         "mutation-exhaustive.json",
     )
-    verify_mutation(
+    verify_campaign_budget(
         json.loads((project / "mutation-exhaustive.json").read_text(encoding="utf-8")),
-        method="exhaustive",
+        stage="complete",
     )
     print("installed gate: sampled, exhaustive 3/3, counterexample JSON, replay,")
     print(
         "installed gate: repaired replay rejected; sampled and exhaustive mutation "
         "with canary and exact replay passed"
     )
+    print("installed gate: baseline-only plan and guarded confirmation budget passed")
 
 
 def main() -> None:

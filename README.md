@@ -76,6 +76,11 @@ domains, structural comparison, stateful paths, and mutation evidence:
   to enumerate declared finite inputs and report each law's bounds and case
   counts while preserving exact replay and calibrated timeout confirmation.
 
+Use `tlaw mutate laws.py implementation.py --plan` to execute one isolated
+baseline and inspect the campaign's planned work. Add `--max-runs 20` to cap all
+isolated pytest invocations, including the canary and confirmations; reports
+explicitly identify budget stops, unconfirmed candidates and mutations left unrun.
+
 Important pieces are still intentionally absent: domain predicates and nested
 domain positions beyond the implemented `number`, `integer`, `list_of`,
 `one_of`, `recursive`, `record`, `depends`, and supported `Annotated` forms;

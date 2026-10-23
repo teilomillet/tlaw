@@ -82,6 +82,7 @@ from .law_diff import LawChange, LawDiffResult, diff
 from .outcome import Outcome, returns
 from .refusal import Refusal, raises
 from .mutation import (
+    CampaignPlan,
     CanaryRun,
     KillKind,
     Mutation,
@@ -99,6 +100,7 @@ def audit(specification: str | FilePath = "audit.py") -> AuditResult:
 
 __all__ = [
     "AuditResult",
+    "CampaignPlan",
     "CanaryRun",
     "CheckResult",
     "Comparison",

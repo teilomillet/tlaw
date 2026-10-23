@@ -161,8 +161,10 @@ def test_the_ledger_reclassifies_only_survivors_and_drops_nothing(
     stale_ids = {mutation_id for mutation_id, _ in stale}
     assert "ffffffffffff" in stale_ids
     for index, outcome in enumerate(outcomes):
-        if outcome is not MutationOutcome.SURVIVED:
+        if outcome not in (MutationOutcome.SURVIVED, MutationOutcome.NOT_RUN):
             assert f"id{index:04d}" in stale_ids
+        elif outcome is MutationOutcome.NOT_RUN:
+            assert f"id{index:04d}" not in stale_ids
 
 
 @given(outcomes=st.lists(st.sampled_from(list(MutationOutcome)), max_size=10))

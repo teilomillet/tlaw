@@ -51,6 +51,7 @@ NOT_LADDER_RUNGS = {
     "CheckResult",
     "FolderCheckResult",
     "MutationResult",
+    "CampaignPlan",
     "MutantRun",
     "Mutation",
     "MutationOutcome",

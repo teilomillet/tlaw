@@ -87,6 +87,16 @@ def _parser() -> argparse.ArgumentParser:
     mutate.add_argument("law_file", type=Path)
     mutate.add_argument("implementation", type=Path)
     mutate.add_argument(
+        "--plan",
+        action="store_true",
+        help="run one baseline and report planned work without canary or mutant runs",
+    )
+    mutate.add_argument(
+        "--max-runs",
+        type=int,
+        help="total isolated pytest invocations, including baseline and confirmations",
+    )
+    mutate.add_argument(
         "--exhaustive",
         action="store_true",
         help="enumerate declared finite inputs for baseline, canary and mutants",
@@ -235,6 +245,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return result.exit_code
 
     if args.command == "mutate":
+        if args.max_runs is not None and args.max_runs <= 0:
+            print("tlaw: mutate --max-runs must be a positive integer", file=sys.stderr)
+            return 2
         if args.max_cases is not None and (not args.exhaustive or args.max_cases <= 0):
             print(
                 "tlaw: mutate --max-cases requires --exhaustive and a positive integer",
@@ -246,6 +259,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.law_file,
                 args.implementation,
                 equivalents=args.equivalents,
+                plan_only=args.plan,
+                max_runs=args.max_runs,
                 exhaustive=args.exhaustive,
                 max_cases=args.max_cases,
             )
@@ -261,7 +276,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 2
             print(f"JSON: {args.json_path}")
         # Exit-code contract, mirroring `tlaw audit`: 2 means the evidence
-        # itself is broken (invalid baseline or harness errors), 1 means
+        # is invalid or incomplete (including a run-budget stop), 1 means
         # unexplained survivors remain — a prompt for investigation, not
         # proof the laws are weak — and 0 means every runnable mutant was
         # killed or is a committed unresolved-equivalent candidate.

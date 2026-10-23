@@ -79,6 +79,18 @@ case (`1/3`, not exhausted). The mutant's exact replay checks only the retained
 input (`1/1`), without enumerating again. Both campaigns keep fresh isolated
 copies, the canary and calibrated timeout confirmation.
 
+Preview the finite campaign with `tlaw mutate laws.py implementation.py
+--exhaustive --plan --json plan.json`. This executes one isolated baseline and
+reports `3..5` planned child runs and at most `15` law-case attempts for the full
+campaign; its one mutant is explicitly unrun and no mutation evidence is claimed.
+
+Add `--max-runs 4` to the exhaustive mutation command to cap the whole campaign
+at four isolated pytest invocations: baseline, canary, mutant and exact replay.
+With `--max-runs 3`, the candidate failure is retained but confirmation is unrun,
+so the result is an error with exit `2`, not a credited kill. These budgets count
+invocations, not seconds or memory; reports identify the blocked phase and any
+mutants left unrun.
+
 The installed-package gate runs this sequence in a temporary copy of the folder,
 using a wheel installed in a fresh environment. It checks the JSON evidence and
 expected exit codes, and leaves the checked-in example unchanged.
