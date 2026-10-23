@@ -24,6 +24,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from .diagnostics import RunDiagnostic
+
 
 #: Environment names a law run must never inherit from the parent process.
 #: The values are spelled out here because the modules that define them import
@@ -33,6 +35,7 @@ from pathlib import Path
 LAW_RUN_CLEARED_ENV = (
     "TLAW_EXPLAIN",
     "TLAW_OBLIGATIONS",
+    "TLAW_DIAGNOSTICS",
     "TLAW_CAPTURE",
     "TLAW_MODE",
     "TLAW_REPLAY",
@@ -126,6 +129,7 @@ class ChildRun:
     duration_seconds: float
     output: str
     command: tuple[str, ...]
+    diagnostics: tuple[RunDiagnostic, ...] = ()
 
 
 def run_pytest(
@@ -143,6 +147,7 @@ def run_pytest(
     """
     command = tuple(command)
     started = time.monotonic()
+    diagnostics: tuple[RunDiagnostic, ...] = ()
     try:
         completed = subprocess.run(
             command,
@@ -157,6 +162,7 @@ def run_pytest(
         exit_code = completed.returncode
         timed_out = False
     except subprocess.TimeoutExpired as error:
+        diagnostics = (RunDiagnostic.from_exception(error, nodeid="", phase="run"),)
         stdout = (
             error.stdout.decode() if isinstance(error.stdout, bytes) else error.stdout
         )
@@ -172,4 +178,5 @@ def run_pytest(
         duration_seconds=time.monotonic() - started,
         output=output,
         command=command,
+        diagnostics=diagnostics,
     )

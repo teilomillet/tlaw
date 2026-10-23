@@ -11,6 +11,7 @@ from typing import Any
 
 from . import _execution
 from .audit import ManifestError
+from .diagnostics import DIAGNOSTICS_ENV, RunDiagnostic, read_diagnostics
 from .finite import DEFAULT_MAX_CASES, MAX_CASES_ENV
 from .obligations import (
     OBLIGATIONS_ENV,
@@ -27,6 +28,7 @@ from .replay import (
     SEED_ENV,
     build_check_report,
     load_report,
+    public_diagnostics,
     read_capture,
 )
 
@@ -59,6 +61,7 @@ class _PytestRun:
     exit_code: int
     output: str
     obligations: tuple[Obligation, ...]
+    diagnostics: tuple[RunDiagnostic, ...] = ()
 
 
 def _run_pytest(
@@ -70,9 +73,11 @@ def _run_pytest(
     with tempfile.TemporaryDirectory(prefix="tlaw-obligations-") as temporary:
         artifacts = Path(temporary)
         receipt = artifacts / "obligations.json"
+        diagnostic_receipt = artifacts / "diagnostics.json"
         environment = {
             **environment,
             OBLIGATIONS_ENV: str(receipt),
+            DIAGNOSTICS_ENV: str(diagnostic_receipt),
             # Hypothesis keeps its example and constants caches under its home
             # directory, which defaults to the working directory. Only inferred
             # laws force ``database=None``; explicit-strategy laws keep the
@@ -90,10 +95,20 @@ def _run_pytest(
         output = run.output
         if run.timed_out:
             output += "\ntlaw: check timed out.\n"
+        diagnostics = run.diagnostics + read_diagnostics(
+            diagnostic_receipt, missing_ok=run.timed_out
+        )
         try:
             obligations = read_obligations(receipt)
         except ManifestError as error:
-            return _PytestRun(run.exit_code, output + f"\ntlaw: {error}\n", ())
+            diagnostics += (
+                RunDiagnostic.from_exception(
+                    error, nodeid=law_path.name, phase="receipt"
+                ),
+            )
+            return _PytestRun(
+                run.exit_code, output + f"\ntlaw: {error}\n", (), diagnostics
+            )
 
     count = sum(law.completed for law in obligations)
     output += f"\ntlaw obligations: {count} of {len(obligations)} completed\n"
@@ -103,7 +118,7 @@ def _run_pytest(
         if not law.completed:
             output += f"  {law.status}: {law.nodeid}\n"
         output += f"  {evidence_line(law)}\n"
-    return _PytestRun(run.exit_code, output, obligations)
+    return _PytestRun(run.exit_code, output, obligations, diagnostics)
 
 
 def check(
@@ -178,6 +193,7 @@ def check(
         pytest_exit_code=run.exit_code,
         captured=captured,
         obligations=run.obligations,
+        diagnostics=run.diagnostics,
     )
     output = run.output
     if search:
@@ -370,7 +386,16 @@ def replay(
         path=str(law_path),
         exit_code=exit_code,
         output=output,
-        report={**report, "obligations": [law.to_dict() for law in run.obligations]},
+        report={
+            **report,
+            "obligations": [law.to_dict() for law in run.obligations],
+            "diagnostics": [
+                diagnostic.to_dict()
+                for diagnostic in public_diagnostics(
+                    run.diagnostics, working_directory=identity_root
+                )
+            ],
+        },
     )
 
 

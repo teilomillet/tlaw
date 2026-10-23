@@ -16,6 +16,7 @@ from typing import Literal
 
 ROOT = Path(__file__).resolve().parents[1]
 LAW = "laws.py::increment_advances_once"
+DIAGNOSTIC_LAW = "diagnostic_laws.py::still_passes"
 
 
 def require(condition: bool, message: str) -> None:
@@ -381,6 +382,86 @@ def verify_selection_campaign(
         require(selected["outcome"] == "not-run", "selected mutant unexpectedly ran")
 
 
+def _verify_setup_diagnostic(report: dict) -> None:
+    diagnostics = report.get("diagnostics", [])
+    require(len(diagnostics) == 1, "missing setup diagnostic")
+    [diagnostic] = diagnostics
+    require(
+        diagnostic.get("nodeid") == DIAGNOSTIC_LAW
+        and diagnostic.get("identity") == DIAGNOSTIC_LAW
+        and diagnostic.get("phase") == "setup"
+        and diagnostic.get("exception_type") == "builtins.RuntimeError"
+        and diagnostic.get("message") == "fixture setup failed",
+        "setup diagnostic lost its law, phase or exception",
+    )
+    detail = diagnostic.get("detail", "")
+    require(
+        "RuntimeError: fixture setup failed" in detail
+        and "ValueError: fixture source rejected" in detail,
+        "setup diagnostic lost its exception chain",
+    )
+    [obligation] = report["obligations"]
+    require(
+        obligation["identity"] == DIAGNOSTIC_LAW and obligation["status"] == "error",
+        "setup failure lost its invalid obligation",
+    )
+
+
+def verify_invalid_check(report: dict) -> None:
+    """Require an explanation without mistaking a setup error for a law failure."""
+    require(report["schema"] == "tlaw.check/v1", "missing invalid check evidence")
+    require(
+        report["summary"]["status"] == "invalid"
+        and report["summary"]["failures"] == 0
+        and report["failures"] == [],
+        "setup error claims a counterexample or a valid check",
+    )
+    _verify_setup_diagnostic(report)
+
+
+def verify_invalid_mutation(report: dict) -> None:
+    """An invalid baseline explains itself and starts no mutation or replay."""
+    require(report["schema"] == "tlaw.mutation/v1", "missing invalid mutation evidence")
+    baseline = report["baseline"]
+    require(
+        baseline["valid"] is False
+        and baseline["exit_code"] == 1
+        and baseline["timed_out"] is False,
+        "setup failure claims a valid mutation baseline",
+    )
+    _verify_setup_diagnostic(baseline)
+    require(
+        report["canary"] is None and report["work"]["runs_started"] == 1,
+        "invalid baseline starts additional isolated runs",
+    )
+    summary = report["summary"]
+    require(
+        summary["generated"] == summary["selected"] == summary["not_run"] == 1
+        and summary["excluded"] == summary["runnable"] == summary["killed"] == 0
+        and summary["survived"] == summary["errors"] == 0
+        and summary["complete"] is False
+        and summary["selection_complete"] is False
+        and summary["has_errors"] is True,
+        "invalid baseline claims mutation completion or outcomes",
+    )
+    [mutant] = report["mutations"]
+    require(
+        mutant["outcome"] == "not-run"
+        and mutant["exit_code"] is None
+        and mutant["timed_out"] is False
+        and mutant["duration_seconds"] == 0
+        and mutant["kill_kind"] is None
+        and mutant["failed_tests"] == []
+        and mutant["evidence"] == mutant["replay_evidence"] == {}
+        and mutant["timeout_baseline_evidence"] == {}
+        and mutant["replay_method"] is None
+        and mutant["replay_exit_code"] is None
+        and mutant["replay_timed_out"] is None
+        and mutant["replay_duration_seconds"] is None,
+        "unrun mutant claims execution or confirmation evidence",
+    )
+
+
 def exercise(cli: Path, project: Path, environment: dict[str, str]) -> None:
     def tlaw(*arguments: str, expected_exit: int = 0) -> str:
         return run(
@@ -518,6 +599,52 @@ def exercise(cli: Path, project: Path, environment: dict[str, str]) -> None:
             )
     finally:
         implementation.write_bytes(original)
+    diagnostic_laws = project / "diagnostic_laws.py"
+    diagnostic_laws.write_text(
+        """import pytest
+import tlaw
+
+Count = tlaw.integer(0, 2)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def broken_setup():
+    try:
+        raise ValueError("fixture source rejected")
+    except ValueError as error:
+        raise RuntimeError("fixture setup failed") from error
+
+
+@tlaw.law
+def still_passes(value: Count):
+    return value >= 0
+""",
+        encoding="utf-8",
+    )
+    try:
+        tlaw(
+            "check",
+            diagnostic_laws.name,
+            "--json",
+            "invalid-check.json",
+            expected_exit=2,
+        )
+        verify_invalid_check(
+            json.loads((project / "invalid-check.json").read_text(encoding="utf-8"))
+        )
+        tlaw(
+            "mutate",
+            diagnostic_laws.name,
+            "implementation.py",
+            "--json",
+            "invalid-mutation.json",
+            expected_exit=2,
+        )
+        verify_invalid_mutation(
+            json.loads((project / "invalid-mutation.json").read_text(encoding="utf-8"))
+        )
+    finally:
+        diagnostic_laws.unlink()
     print("installed gate: sampled, exhaustive 3/3, counterexample JSON, replay,")
     print(
         "installed gate: repaired replay rejected; sampled and exhaustive mutation "
@@ -525,6 +652,7 @@ def exercise(cli: Path, project: Path, environment: dict[str, str]) -> None:
     )
     print("installed gate: baseline-only plan and guarded confirmation budget passed")
     print("installed gate: exact ID selection preserves excluded and unrun outcomes")
+    print("installed gate: invalid check and mutation retain chained setup diagnostics")
 
 
 def main() -> None:

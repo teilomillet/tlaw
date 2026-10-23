@@ -15,6 +15,7 @@ import pytest
 
 from tlaw import _execution
 from tlaw.audit import TARGET_ENV
+from tlaw.diagnostics import DIAGNOSTICS_ENV
 from tlaw.finite import MAX_CASES_ENV
 from tlaw.obligations import OBLIGATIONS_ENV
 from tlaw.replay import (
@@ -116,6 +117,7 @@ def test_the_cleared_names_stay_in_sync_with_the_modules_that_define_them() -> N
         CAPTURE_ENV,
         MODE_ENV,
         OBLIGATIONS_ENV,
+        DIAGNOSTICS_ENV,
         MAX_CASES_ENV,
         SEED_ENV,
         REPLAY_ENV,

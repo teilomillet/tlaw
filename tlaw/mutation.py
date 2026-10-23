@@ -91,6 +91,7 @@ from typing import Any, Literal
 
 from . import _execution
 from .audit import ManifestError
+from .diagnostics import DIAGNOSTICS_ENV, RunDiagnostic, read_diagnostics
 from .mutation_ast import Mutation, generate_mutations, poison_source
 
 from .finite import DEFAULT_MAX_CASES, MAX_CASES_ENV
@@ -108,6 +109,7 @@ from .replay import (
     REPLAY_ROOT_ENV,
     build_check_report,
     load_report,
+    public_diagnostics,
     read_capture,
 )
 
@@ -183,6 +185,7 @@ class CanaryRun:
     obligations: tuple[Obligation, ...] = ()
     evidence: dict[str, Any] = field(repr=False, default_factory=dict)
     evidence_error: str | None = None
+    diagnostics: tuple[RunDiagnostic, ...] = ()
 
     @property
     def wired(self) -> bool | None:
@@ -288,6 +291,7 @@ class BaselineRun:
     command: tuple[str, ...] = ()
     obligations: tuple[Obligation, ...] = ()
     evidence_error: str | None = None
+    diagnostics: tuple[RunDiagnostic, ...] = ()
 
     @property
     def valid(self) -> bool:
@@ -332,6 +336,7 @@ class MutantRun:
     replay_exit_code: int | None = None
     replay_timed_out: bool | None = None
     replay_duration_seconds: float | None = None
+    timeout_baseline_evidence: dict[str, Any] = field(repr=False, default_factory=dict)
 
 
 def apply_equivalence_ledger(
@@ -595,6 +600,7 @@ class MutationResult:
                 "valid": self.baseline_valid,
                 "obligations": [law.to_dict() for law in self.baseline.obligations],
                 "evidence_error": self.baseline.evidence_error,
+                "diagnostics": [entry.to_dict() for entry in self.baseline.diagnostics],
             },
             "budget": {
                 "seconds": self.budget_seconds,
@@ -613,6 +619,9 @@ class MutationResult:
                     "obligations": [law.to_dict() for law in self.canary.obligations],
                     "evidence": self.canary.evidence,
                     "evidence_error": self.canary.evidence_error,
+                    "diagnostics": [
+                        entry.to_dict() for entry in self.canary.diagnostics
+                    ],
                 }
             ),
             "mutations": [
@@ -636,6 +645,7 @@ class MutationResult:
                     "replay_exit_code": run.replay_exit_code,
                     "replay_timed_out": run.replay_timed_out,
                     "replay_duration_seconds": run.replay_duration_seconds,
+                    "timeout_baseline_evidence": run.timeout_baseline_evidence,
                 }
                 for run in self.runs
             ],
@@ -691,6 +701,7 @@ class MutationResult:
             f"{len(self.baseline.obligations)} completed"
         )
         lines.extend(f"  {evidence_line(law)}" for law in self.baseline.obligations)
+        lines.extend(f"  {entry.render_text()}" for entry in self.baseline.diagnostics)
         lines.append(
             f"Mutation scope: generated {len(self.runs)}; selected {self.selected_count}; "
             f"excluded {self.excluded_count}"
@@ -740,6 +751,9 @@ class MutationResult:
             else:
                 lines.append(f"Canary: ERROR — wiring unverified ({self.canary.note})")
             lines.extend(f"  {evidence_line(law)}" for law in self.canary.obligations)
+            lines.extend(
+                f"  {entry.render_text()}" for entry in self.canary.diagnostics
+            )
         lines.append("Mutations:")
         labels = {
             MutationOutcome.KILLED: "KILLED",
@@ -767,6 +781,13 @@ class MutationResult:
             )
             for entry in run.evidence.get("obligations", ()):
                 lines.append(f"  {evidence_line(Obligation(**entry))}")
+            for label, evidence in (
+                ("candidate", run.evidence),
+                ("timeout baseline", run.timeout_baseline_evidence),
+                ("confirmation", run.replay_evidence),
+            ):
+                for entry in evidence.get("diagnostics", ()):
+                    lines.append(f"  {label}: {RunDiagnostic(**entry).render_text()}")
             if run.timed_out and not run.evidence.get("obligations"):
                 lines.append("  case counts unavailable: execution timed out")
         for mutation_id, note in self.stale_ledger_entries:
@@ -802,6 +823,7 @@ class _PytestRun:
     obligations: tuple[Obligation, ...] = ()
     evidence: dict[str, Any] = field(default_factory=dict)
     evidence_error: str | None = None
+    diagnostics: tuple[RunDiagnostic, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1065,8 +1087,10 @@ def _run_pytest_in_copy(
 
         law_file = law_file.resolve()
         receipt = Path(workspace) / "obligations.json"
+        diagnostic_receipt = Path(workspace) / "diagnostics.json"
         capture = Path(workspace) / "failures.json"
         environment[OBLIGATIONS_ENV] = str(receipt)
+        environment[DIAGNOSTICS_ENV] = str(diagnostic_receipt)
         if replay_evidence is None:
             environment[CAPTURE_ENV] = str(capture)
             environment[MODE_ENV] = mode
@@ -1096,8 +1120,23 @@ def _run_pytest_in_copy(
         exit_code = executed.exit_code
         timed_out = executed.timed_out
         duration = executed.duration_seconds
+        diagnostics = public_diagnostics(
+            executed.diagnostics
+            + read_diagnostics(diagnostic_receipt, missing_ok=timed_out),
+            working_directory=law_file.parent,
+        )
+        diagnostics = tuple(
+            replace(
+                entry, nodeid=f"{boundary.laws_name}::{entry.nodeid.split('::', 1)[1]}"
+            )
+            if entry.identity is not None and "::" in entry.nodeid
+            else entry
+            for entry in diagnostics
+        )
         obligations: tuple[Obligation, ...] = ()
-        evidence: dict[str, Any] = {}
+        evidence: dict[str, Any] = {
+            "diagnostics": [entry.to_dict() for entry in diagnostics]
+        }
         evidence_error = None
         try:
             collected = read_obligations(receipt)
@@ -1109,6 +1148,7 @@ def _run_pytest_in_copy(
                 pytest_exit_code=exit_code,
                 captured=read_capture(capture),
                 obligations=collected,
+                diagnostics=diagnostics,
             )
             # Copies have different absolute roots; law identities and item
             # suffixes, including parametrization, remain the same evidence.
@@ -1134,6 +1174,12 @@ def _run_pytest_in_copy(
             evidence["obligations"] = [law.to_dict() for law in obligations]
         except (ManifestError, KeyError, TypeError, ValueError, OSError) as error:
             evidence_error = str(error)
+            diagnostics += (
+                RunDiagnostic.from_exception(
+                    error, nodeid=boundary.laws_name, phase="receipt"
+                ),
+            )
+            evidence["diagnostics"] = [entry.to_dict() for entry in diagnostics]
             output += f"\ntlaw mutation: {evidence_error}\n"
         return _PytestRun(
             exit_code,
@@ -1144,6 +1190,7 @@ def _run_pytest_in_copy(
             obligations,
             evidence,
             evidence_error,
+            diagnostics,
         )
 
 
@@ -1361,6 +1408,7 @@ def _confirm_kill(
             )
         except _RunLimitReached as error:
             return _kill_did_not_replay(run, f"confirmation not run: {error}")
+        run = replace(run, timeout_baseline_evidence=fresh.evidence)
         problem = _evidence_problem(fresh, expected=expected, max_cases=max_cases)
         if (
             fresh.exit_code != 0
@@ -1555,6 +1603,7 @@ def mutate(
         command=baseline_run.command,
         obligations=baseline_run.obligations,
         evidence_error=_evidence_problem(baseline_run, max_cases=max_cases),
+        diagnostics=baseline_run.diagnostics,
     )
 
     def finish(
@@ -1685,6 +1734,7 @@ def mutate(
             obligations=canary_run.obligations,
             evidence=canary_run.evidence,
             evidence_error=canary_problem,
+            diagnostics=canary_run.diagnostics,
         )
         if canary.wired is not True:
             return finish(

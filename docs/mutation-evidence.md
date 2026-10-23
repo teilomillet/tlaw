@@ -125,6 +125,25 @@ Invalid and error outcomes are not kills. Equivalent mutations are generally
 undecidable automatically; a survivor is a prompt for investigation, not proof
 that the laws are weak.
 
+### Execution diagnostics
+
+Invalid or incomplete execution retains its actual pytest exception and phase,
+including formatted nested causes, separately from counterexamples. Baseline
+and canary JSON include `diagnostics`; each candidate's `evidence` and
+`replay_evidence` retain diagnostics for those distinct runs. Text reports
+identify the affected phase and exception. The fields and limits are shared
+with [check diagnostics](current-behavior.md#execution-diagnostics).
+
+For timeout confirmation, `timeout_baseline_evidence` preserves the fresh
+calibration run before its outcome is checked. A failed calibration or a later
+budget stop therefore keeps that run's explanation. Ordinary observed kills
+and untouched candidates have an empty `timeout_baseline_evidence` object.
+
+Diagnostics do not participate in baseline validity, canary wiring, attribution
+or kill confirmation. Missing or malformed diagnostic data is reported without
+replacing the independent obligation receipt. Isolation, run accounting,
+calibrated deadlines and exact-input replay use the same rules as before.
+
 ### Campaign planning and run budgets
 
 Plan a campaign before running its canary or mutants:

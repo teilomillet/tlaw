@@ -11,6 +11,7 @@ from pathlib import Path
 import hypothesis
 import pytest
 
+from .diagnostics import DIAGNOSTICS_ENV, DiagnosticPhase, RunDiagnostic
 from .obligations import OBLIGATIONS_ENV, CaseProgress, LawStatus, Obligation
 from .replay import MODE_ENV, REPLAY_ENV, SEED_ENV, replay_names
 
@@ -38,6 +39,60 @@ class _LawRun:
 
 
 _LAW_RUNS = pytest.StashKey[dict[str, _LawRun]]()
+_DIAGNOSTICS = pytest.StashKey[dict[tuple[str, DiagnosticPhase], RunDiagnostic]]()
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.stash[_DIAGNOSTICS] = {}
+
+
+def _record_diagnostic(
+    config: pytest.Config,
+    report: pytest.TestReport | pytest.CollectReport,
+    *,
+    phase: DiagnosticPhase,
+    error: BaseException | None = None,
+    identity: str | None = None,
+) -> None:
+    try:
+        detail = report.longreprtext
+    except Exception:
+        detail = "<pytest exception detail could not be rendered>"
+    reason = getattr(report, "wasxfail", None)
+    if reason:
+        detail += f"\nxfail marker: {reason}"
+    if error is None:
+        diagnostic = RunDiagnostic(
+            report.nodeid, phase, None, detail or report.outcome, detail, identity
+        )
+    else:
+        diagnostic = RunDiagnostic.from_exception(
+            error, nodeid=report.nodeid, phase=phase, detail=detail, identity=identity
+        )
+    config.stash[_DIAGNOSTICS][report.nodeid, phase] = diagnostic
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_make_collect_report(
+    collector: pytest.Collector,
+) -> Generator[None, pytest.CollectReport, pytest.CollectReport]:
+    report = yield
+    if report.failed or report.skipped:
+        _record_diagnostic(collector.config, report, phase="collect")
+    return report
+
+
+def pytest_exception_interact(
+    node: pytest.Node,
+    call: pytest.CallInfo[None],
+    report: pytest.TestReport | pytest.CollectReport,
+) -> None:
+    # Pytest exposes the actual collection exception through this public hook.
+    # Replace the earlier formatted-only entry; never inspect report internals.
+    if call.when == "collect" and call.excinfo is not None:
+        _record_diagnostic(
+            node.config, report, phase="collect", error=call.excinfo.value
+        )
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -176,6 +231,14 @@ def pytest_runtest_makereport(
     """Observe finalized pytest outcomes, including skips and expected failures."""
     report = yield
     run = item.config.stash.get(_LAW_RUNS, {}).get(item.nodeid)
+    if report.failed or report.skipped or hasattr(report, "wasxfail"):
+        _record_diagnostic(
+            item.config,
+            report,
+            phase=report.when,
+            error=None if call.excinfo is None else call.excinfo.value,
+            identity=None if run is None else run.identity,
+        )
     if run is None:
         return report
     status: LawStatus = report.outcome
@@ -202,6 +265,18 @@ def pytest_runtest_makereport(
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """Write execution evidence and reject missing retained laws."""
     del exitstatus
+    destination = os.environ.get(DIAGNOSTICS_ENV)
+    if destination is not None:
+        diagnostics = session.config.stash.get(_DIAGNOSTICS, {})
+        try:
+            Path(destination).write_text(
+                json.dumps([entry.to_dict() for entry in diagnostics.values()]) + "\n",
+                encoding="utf-8",
+            )
+        except OSError:
+            # An unavailable explanation cannot suppress the obligation receipt
+            # or change pytest's outcome. The parent reports the unreadable file.
+            pass
     destination = os.environ.get(OBLIGATIONS_ENV)
     if destination is not None:
         runs = session.config.stash.get(_LAW_RUNS, {})

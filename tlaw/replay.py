@@ -8,6 +8,7 @@ import inspect
 import json
 import math
 import os
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -16,6 +17,7 @@ from hypothesis.control import current_build_context, currently_in_test_context
 
 from .audit import ManifestError
 from .comparison import Comparison
+from .diagnostics import RunDiagnostic
 from .obligations import Obligation, obligations_complete
 
 
@@ -309,6 +311,20 @@ def _portable_path(path: Path, *, working_directory: Path) -> str:
         return str(path)
 
 
+def public_diagnostics(
+    diagnostics: tuple[RunDiagnostic, ...], *, working_directory: Path
+) -> tuple[RunDiagnostic, ...]:
+    """Use the same portable law identities as obligations and counterexamples."""
+    public = []
+    for diagnostic in diagnostics:
+        if diagnostic.identity is not None:
+            source, name = diagnostic.identity.rsplit("::", 1)
+            path = _portable_path(Path(source), working_directory=working_directory)
+            diagnostic = replace(diagnostic, identity=f"{path}::{name}")
+        public.append(diagnostic)
+    return tuple(public)
+
+
 def build_check_report(
     law_path: Path,
     *,
@@ -318,6 +334,7 @@ def build_check_report(
     pytest_exit_code: int,
     captured: tuple[dict[str, Any], ...],
     obligations: tuple[Obligation, ...],
+    diagnostics: tuple[RunDiagnostic, ...] = (),
 ) -> dict[str, Any]:
     portable = _portable_path(law_path, working_directory=working_directory)
     failures = []
@@ -378,6 +395,12 @@ def build_check_report(
         },
         "failures": failures,
         "obligations": public_obligations,
+        "diagnostics": [
+            diagnostic.to_dict()
+            for diagnostic in public_diagnostics(
+                diagnostics, working_directory=working_directory
+            )
+        ],
     }
 
 

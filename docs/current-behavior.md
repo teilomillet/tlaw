@@ -318,6 +318,42 @@ timeouts, incomplete law execution, or other harness failures. Existing v1
 reports without `obligations` remain replayable: execution evidence is always
 collected afresh, never trusted from the saved report.
 
+### Execution diagnostics
+
+`tlaw.check/v1` reports include a `diagnostics` array, separate from retained
+counterexamples and law obligations. Each entry contains:
+
+- `nodeid`: the pytest item or collector, or an empty string for a child-process
+  outcome that cannot be attributed to one item;
+- `identity`: the portable law identity, or `null` for collection, ordinary
+  tests and process-level outcomes;
+- `phase`: `collect`, `setup`, `call`, `teardown`, `run` or `receipt`;
+- `exception_type`: the fully qualified type, or `null` when pytest provides
+  only an outcome such as an unexpected pass;
+- `message`: the exception message or pytest outcome explanation; and
+- `detail`: pytest's formatted exception detail, retaining chained and grouped
+  causes. It may contain the original absolute traceback paths.
+
+For example, a passing law body can exceed Hypothesis's per-example deadline.
+That run remains invalid, with no retained law counterexample, while its
+diagnostic names `hypothesis.errors.DeadlineExceeded`. A `FlakyFailure` retains
+its underlying exceptions in `detail`. Collection, fixture, skipped and xfailed
+outcomes are also explained. Ordinary stable law failures keep their typed
+counterexamples and exact replay alongside the diagnostic.
+
+Diagnostics are collected at finalized pytest outcomes and written once when
+the session finishes, in a separate receipt under the existing temporary
+workspace. They are not a per-example trace or a record of backend session
+state. A child timeout records `subprocess.TimeoutExpired` even when pytest
+cannot finish its receipts. Missing or malformed diagnostic receipts produce
+a `receipt` diagnostic; independent obligations and retained failures still
+decide the verdict. Diagnostic messages alone cannot refute a law or confirm
+a mutation kill.
+
+Replay returns diagnostics from its fresh execution, replacing the original
+run's diagnostics while preserving the retained failure history. Existing v1
+reports without diagnostics remain replayable.
+
 Replay retains skip, xfail, and fixture policies. Function-level pytest
 parametrization is removed for replay because saved inputs already supply its
 values; both decorator orders are tested. Inherited module/class parametrization
