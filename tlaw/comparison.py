@@ -53,15 +53,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 from typing import Any, Callable
 
-
-_REPR_LIMIT = 200
-
-
-def _short(value: Any) -> str:
-    text = repr(value)
-    if len(text) <= _REPR_LIMIT:
-        return text
-    return f"{text[:_REPR_LIMIT]}... ({len(text)} characters)"
+from .claims import Claim, _short
 
 
 def _array_shape(value: Any) -> tuple[Any, ...] | None:
@@ -110,7 +102,7 @@ class Difference:
 
 
 @dataclass(frozen=True)
-class Comparison:
+class Comparison(Claim):
     """The result of ``same``: truthy on agreement, explanatory on failure.
 
     Returned instead of a bare bool so a failing law can show both sides
@@ -130,9 +122,6 @@ class Comparison:
     def matched(self) -> bool:
         return self.difference is None
 
-    def __bool__(self) -> bool:
-        return self.matched
-
     def explain(self) -> str:
         """Render both sides and the first difference as readable text."""
         if self.difference is None:
@@ -148,13 +137,6 @@ class Comparison:
             lines.append(f"left:  {_short(self.left)}")
             lines.append(f"right: {_short(self.right)}")
         return "\n".join(lines)
-
-    def check(self, description: str = "law") -> None:
-        """Raise the failure with both sides retained, or do nothing."""
-        if self.difference is None:
-            return
-        indented = "\n".join(f"  {line}" for line in self.explain().splitlines())
-        raise AssertionError(f"law failed: {description}\n{indented}")
 
     def and_then(self, observe: Callable[[], Any]) -> Any:
         """State another claim after this comparison has matched.
@@ -178,9 +160,7 @@ class Comparison:
         ``Comparison``, an ``Exclusion``, a ``Refusal``, an ``Outcome``, or a
         bool.
         """
-        if not self.matched:
-            return self
-        return observe()
+        return self._continue_claim(observe)
 
 
 def _is_number(value: Any) -> bool:

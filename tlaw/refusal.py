@@ -48,20 +48,11 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from .awaiting import awaited, isawaitable, refuse_running_loop
-
-
-_REPR_LIMIT = 200
-
-
-def _short(value: Any) -> str:
-    text = repr(value)
-    if len(text) <= _REPR_LIMIT:
-        return text
-    return f"{text[:_REPR_LIMIT]}... ({len(text)} characters)"
+from .claims import Claim, _capture_call, _short
 
 
 @dataclass(frozen=True)
-class Refusal:
+class Refusal(Claim):
     """The observed outcome of a call that a law says must raise.
 
     Exactly one of three things happened, and the report names it:
@@ -80,9 +71,6 @@ class Refusal:
     def matched(self) -> bool:
         return self.raised is not None and isinstance(self.raised, self.expected)
 
-    def __bool__(self) -> bool:
-        return self.matched
-
     def explain(self) -> str:
         # Whether tlaw awaited the target changes what "the call" means, so
         # the report names it rather than leaving the reader to assume.
@@ -98,12 +86,6 @@ class Refusal:
             f"expected {self.expected.__name__}, but {call} raised "
             f"{type(self.raised).__name__}: {self.raised}"
         )
-
-    def check(self, description: str = "law") -> None:
-        """Raise the failure with the actual outcome named, or do nothing."""
-        if self.matched:
-            return
-        raise AssertionError(f"law failed: {description}\n  {self.explain()}")
 
     def and_then(self, observe: Callable[[BaseException], Any]) -> Any:
         """State a second claim about the exception this call actually raised.
@@ -124,9 +106,7 @@ class Refusal:
         ``Comparison``, another ``Refusal``, an ``Outcome``, or a bool —
         becomes the law's result.
         """
-        if not self.matched:
-            return self
-        return observe(self.raised)
+        return self._continue_claim(observe, self.raised)
 
 
 def raises(
@@ -168,20 +148,15 @@ def _observed(
 ) -> Refusal:
     """Perform one call and retain exactly what it did.
 
-    ``except expected`` comes first so a law may name a ``BaseException``
-    such as ``CancelledError`` and have it observed. Every other
-    ``Exception`` is evidence; a non-``Exception`` exit the law did not
-    name propagates, so an interrupt is never captured as a result.
+    A named ``BaseException`` such as ``CancelledError`` and every other
+    ``Exception`` are retained as evidence; a non-``Exception`` exit the law
+    did not name propagates, so an interrupt is never captured as a result.
     """
-    try:
-        returned = call()
-    except expected as error:
-        return Refusal(expected=expected, raised=error, awaited=awaited_call)
-    except Exception as error:
-        return Refusal(expected=expected, raised=error, awaited=awaited_call)
+    completed, returned, raised = _capture_call(call, handled=(expected, Exception))
     return Refusal(
         expected=expected,
+        raised=raised,
         returned=returned,
-        completed=True,
+        completed=completed,
         awaited=awaited_call,
     )

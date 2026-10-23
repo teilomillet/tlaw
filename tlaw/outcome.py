@@ -44,20 +44,11 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from .awaiting import awaited, isawaitable, refuse_running_loop
-
-
-_REPR_LIMIT = 200
-
-
-def _short(value: Any) -> str:
-    text = repr(value)
-    if len(text) <= _REPR_LIMIT:
-        return text
-    return f"{text[:_REPR_LIMIT]}... ({len(text)} characters)"
+from .claims import Claim, _capture_call, _short
 
 
 @dataclass(frozen=True)
-class Outcome:
+class Outcome(Claim):
     """The observed outcome of a call that a law says must return a branch.
 
     Exactly one of three things happened, and the report names it: the
@@ -74,9 +65,6 @@ class Outcome:
     @property
     def matched(self) -> bool:
         return self.completed and isinstance(self.returned, self.expected)
-
-    def __bool__(self) -> bool:
-        return self.matched
 
     @property
     def value(self) -> Any:
@@ -97,12 +85,6 @@ class Outcome:
             f"{type(self.raised).__name__}: {self.raised}"
         )
 
-    def check(self, description: str = "law") -> None:
-        """Raise the failure with the actual outcome named, or do nothing."""
-        if self.matched:
-            return
-        raise AssertionError(f"law failed: {description}\n  {self.explain()}")
-
     def and_then(self, observe: Callable[[Any], Any]) -> Any:
         """State a second claim about the value this call actually returned.
 
@@ -121,9 +103,7 @@ class Outcome:
         ``Comparison``, an ``Exclusion``, a ``Refusal``, another
         ``Outcome``, or a bool — becomes the law's result.
         """
-        if not self.matched:
-            return self
-        return observe(self.returned)
+        return self._continue_claim(observe, self.returned)
 
 
 def returns(
@@ -173,14 +153,12 @@ def _observed(
     non-``Exception`` exit propagates, so an interrupt is never captured as
     a result.
     """
-    try:
-        returned = call()
-    except Exception as error:
-        return Outcome(expected=expected, raised=error, awaited=awaited_call)
+    completed, returned, raised = _capture_call(call, handled=Exception)
     return Outcome(
         expected=expected,
         returned=returned,
-        completed=True,
+        raised=raised,
+        completed=completed,
         awaited=awaited_call,
     )
 

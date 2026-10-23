@@ -51,15 +51,7 @@ from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
 from typing import Any
 
-
-_REPR_LIMIT = 200
-
-
-def _short(value: Any) -> str:
-    text = repr(value)
-    if len(text) <= _REPR_LIMIT:
-        return text
-    return f"{text[:_REPR_LIMIT]}... ({len(text)} characters)"
+from .claims import Claim, _short
 
 
 @dataclass(frozen=True)
@@ -72,7 +64,7 @@ class Leak:
 
 
 @dataclass(frozen=True)
-class Exclusion:
+class Exclusion(Claim):
     """The result of ``excludes``: truthy when nothing forbidden was found.
 
     Returned instead of a bare bool so a failing law can name the fragment
@@ -88,9 +80,6 @@ class Exclusion:
     def matched(self) -> bool:
         return self.leak is None
 
-    def __bool__(self) -> bool:
-        return self.matched
-
     def explain(self) -> str:
         if self.leak is None:
             count = len(self.forbidden)
@@ -104,13 +93,6 @@ class Exclusion:
         if where.path:
             lines.append(f"value: {_short(self.value)}")
         return "\n".join(lines)
-
-    def check(self, description: str = "law") -> None:
-        """Raise the failure with the leak located, or do nothing."""
-        if self.leak is None:
-            return
-        indented = "\n".join(f"  {line}" for line in self.explain().splitlines())
-        raise AssertionError(f"law failed: {description}\n{indented}")
 
 
 # The leaves tlaw can read faithfully: text and bytes by containment, and
