@@ -34,15 +34,22 @@ Generating inputs — what the annotation says:
 When behavior mutates state, describe two paths from fresh starts instead:
 ``system``, ``.call``/``.then``, ``.same_as``.
 
-Getting evidence — a separate axis, ordered by how hard the laws are tried:
+Getting evidence — three different questions, not one scale:
 
 1. ``tlaw check`` — do the laws hold against the code now?
-2. ``tlaw mutate`` — do the laws actually *constrain* the code? (adversarial)
-3. ``tlaw diff`` — did a commit change what a law *means*?
-4. ``tlaw audit`` — do the laws reject declared-wrong implementations?
+2. ``tlaw mutate`` and ``tlaw audit`` — do the laws actually *constrain* the
+   code? ``audit`` challenges them with implementations you declared wrong;
+   ``mutate`` generates challenges you did not choose.
+3. ``tlaw diff`` — did a commit change what a law *means*? This is review
+   visibility over parsed source, not executed evidence.
 
 Each public callable has its own docstring with the why; this is the map of
 when to reach for which.
+
+Two public names need a word of warning. ``tlaw.Path`` is tlaw's immutable
+stateful path, not ``pathlib.Path``; import ``pathlib`` explicitly when a law
+needs both. ``tlaw.Lawbook`` builds the Python audit declaration read by
+``tlaw audit`` (also importable as ``tlaw.book.Lawbook``).
 """
 
 from __future__ import annotations
@@ -57,6 +64,7 @@ from .audit import (
     audit_manifest,
 )
 from .authoring import Equation, Path, System, law, system
+from .book import Lawbook
 from .check import (
     CheckResult,
     FolderCheckResult,
@@ -114,6 +122,7 @@ __all__ = [
     "KnownWrongOutcome",
     "LawChange",
     "LawDiffResult",
+    "Lawbook",
     "ManifestError",
     "MutantRun",
     "Mutation",

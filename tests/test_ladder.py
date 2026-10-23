@@ -60,6 +60,9 @@ NOT_LADDER_RUNGS = {
     "KnownWrongOutcome",
     "LawChange",
     "LawDiffResult",
+    # Audit authoring: ``tlaw audit`` runs a Lawbook; the book is the
+    # declaration it reads, not a separate rung.
+    "Lawbook",
     # Errors.
     "ManifestError",
     "EnforcementError",

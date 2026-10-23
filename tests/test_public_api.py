@@ -44,8 +44,16 @@ def test_the_authoring_vocabulary_is_present() -> None:
         "replay",
         "audit",
         "mutate",
+        "Lawbook",
     ):
         assert callable(getattr(tlaw, name)), f"{name} must be callable"
+
+
+def test_lawbook_is_exported_without_removing_its_documented_import_path() -> None:
+    from tlaw.book import Lawbook as BookLawbook
+
+    assert tlaw.Lawbook is BookLawbook
+    assert "Lawbook" in tlaw.__all__
 
 
 def test_internal_domain_provenance_is_not_a_public_constructor_argument() -> None:
