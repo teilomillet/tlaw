@@ -6,6 +6,8 @@ shapes), not the easiest, so the vocabulary is not shaped by a toy.
 
 from __future__ import annotations
 
+from typing import Annotated
+
 import pytest
 
 import tlaw
@@ -101,6 +103,10 @@ UnknownDependency = tlaw.depends(lambda nonexistent: tlaw.integer(1, nonexistent
 CyclicFirst = tlaw.depends(lambda second: tlaw.integer(1, max(second, 1)))
 CyclicSecond = tlaw.depends(lambda first: tlaw.integer(1, max(first, 1)))
 WrongBuilder = tlaw.depends(lambda budget: "not a domain")
+AnnotatedBudget = Annotated[int, Budget]
+AnnotatedLengths = Annotated[list[int], Lengths]
+ContradictingAnnotatedLengths = Annotated[str, Lengths]
+ListWrappedDependent = list[Lengths]
 
 
 def test_an_unknown_dependency_is_refused_at_decoration() -> None:
@@ -146,3 +152,64 @@ def test_a_builder_returning_a_non_domain_is_refused() -> None:
         uses_wrong()
 
     assert "must build a tlaw domain" in str(refusal.value)
+
+
+def test_annotated_dependent_domains_enforce_relations_and_base_types() -> None:
+    @tlaw.law
+    def annotated_lengths_fit_budget(
+        budget: AnnotatedBudget,
+        lengths: AnnotatedLengths,
+    ) -> bool:
+        return all(1 <= length <= budget for length in lengths)
+
+    annotated_lengths_fit_budget()
+    assert annotated_lengths_fit_budget.__tlaw_inputs__ == (
+        "budget: integer(1, 30)",
+        "lengths: depends(budget)",
+    )
+
+    @tlaw.law
+    def contradicting_base(
+        budget: AnnotatedBudget,
+        lengths: ContradictingAnnotatedLengths,
+    ) -> bool:
+        return isinstance(lengths, list)
+
+    with pytest.raises(TypeError, match="cannot hold what"):
+        contradicting_base()
+
+    with pytest.raises(TypeError, match="position tlaw cannot enforce yet"):
+
+        @tlaw.law
+        def nested_list_of_dependent(
+            budget: Budget,
+            batches: ListWrappedDependent,
+        ) -> bool:
+            return bool(batches)
+
+
+def test_explicit_law_supports_dependent_domains() -> None:
+    @tlaw.law(
+        "explicit dependent lengths fit budget",
+        budget=Budget,
+        lengths=Lengths,
+    )
+    def explicit_lengths_fit_budget(budget: int, lengths: list[int]) -> bool:
+        return all(1 <= length <= budget for length in lengths)
+
+    explicit_lengths_fit_budget()
+    assert explicit_lengths_fit_budget.__tlaw_inputs__ == (
+        "budget: integer(1, 30)",
+        "lengths: depends(budget)",
+    )
+
+    with pytest.raises(TypeError, match="unknown parameters: extra"):
+
+        @tlaw.law(
+            "unknown explicit parameter",
+            budget=Budget,
+            lengths=Lengths,
+            extra=Budget,
+        )
+        def bad_explicit(budget: int, lengths: list[int]) -> bool:
+            return True

@@ -641,7 +641,10 @@ and cycles are refused at decoration time. A builder that returns anything
 other than a tlaw domain is refused when it runs.
 
 The explicit `@tlaw.law("description", rewards=Rewards)` form also accepts
-domains (or Hypothesis strategies) directly. It deliberately follows
+domains, dependent domains (`tlaw.depends(...)`), or Hypothesis strategies
+directly, and `Annotated[T, tlaw.depends(...)]` is supported alongside
+`Annotated[T, domain]` with the same runtime base-type compatibility check.
+The explicit form deliberately follows
 ordinary Hypothesis settings — authors stack their own `@settings` on top,
 and Hypothesis rejects a second application, so tlaw cannot force defaults
 without breaking that — and it does not apply the inferred form's

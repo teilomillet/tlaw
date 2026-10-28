@@ -302,7 +302,9 @@ def _render_annotation(annotation: Any) -> str:
     origin = get_origin(annotation)
     if origin is Annotated:
         base, *metadata = get_args(annotation)
-        domains = [value for value in metadata if isinstance(value, Domain)]
+        domains = [
+            value for value in metadata if isinstance(value, Domain | DependentDomain)
+        ]
         if len(domains) == 1:
             return domains[0].description
         return _render_annotation(base)
@@ -412,7 +414,11 @@ def _verify_base_matches_domain(
 
 
 def _domain_strategy(
-    annotation: Any, *, description: str, parameter: str
+    annotation: Any,
+    *,
+    description: str,
+    parameter: str,
+    allow_dependent: bool = True,
 ) -> SearchStrategy[Any] | DependentDomain:
     """Compile one annotation that mentions a tlaw domain into a strategy.
 
@@ -434,13 +440,30 @@ def _domain_strategy(
     if isinstance(annotation, Domain):
         return annotation.strategy
     if isinstance(annotation, DependentDomain):
+        if not allow_dependent:
+            raise TypeError(
+                f"law '{description}' parameter '{parameter}' uses a tlaw domain in a "
+                "position tlaw cannot enforce yet; supported: a bare domain, "
+                "Annotated[type, domain], and list[...] of those"
+            )
         # Returned whole: its strategy does not exist until the values it
         # depends on have been drawn, which happens in _ordered_inputs.
         return annotation
     if get_origin(annotation) is Annotated:
         base, *metadata = get_args(annotation)
-        domains = [value for value in metadata if isinstance(value, Domain)]
+        domains = [
+            value for value in metadata if isinstance(value, Domain | DependentDomain)
+        ]
         if len(domains) == 1 and len(metadata) == 1:
+            if isinstance(domains[0], DependentDomain):
+                if not allow_dependent:
+                    raise TypeError(
+                        f"law '{description}' parameter '{parameter}' uses a tlaw "
+                        "domain in a position tlaw cannot enforce yet; supported: "
+                        "a bare domain, Annotated[type, domain], and list[...] of "
+                        "those"
+                    )
+                return domains[0]
             _verify_base_matches_domain(
                 base, domains[0], description=description, parameter=parameter
             )
@@ -453,11 +476,14 @@ def _domain_strategy(
     if get_origin(annotation) is list:
         arguments = get_args(annotation)
         if len(arguments) == 1:
-            return st.lists(
-                _domain_strategy(
-                    arguments[0], description=description, parameter=parameter
-                )
+            element = _domain_strategy(
+                arguments[0],
+                description=description,
+                parameter=parameter,
+                allow_dependent=False,
             )
+            assert not isinstance(element, DependentDomain)
+            return st.lists(element)
     raise TypeError(
         f"law '{description}' parameter '{parameter}' uses a tlaw domain in a "
         "position tlaw cannot enforce yet; supported: a bare domain, "
@@ -469,6 +495,7 @@ def _ordered_inputs(
     specifications: dict[str, SearchStrategy[Any] | DependentDomain],
     *,
     description: str,
+    annotated_bases: dict[str, Any] | None = None,
 ) -> SearchStrategy[dict[str, Any]]:
     """Draw every parameter in dependency order as one composite value.
 
@@ -504,7 +531,15 @@ def _ordered_inputs(
         for name in order:
             specification = specifications[name]
             if isinstance(specification, DependentDomain):
-                values[name] = draw(specification.resolve(values).strategy)
+                domain = specification.resolve(values)
+                if annotated_bases and name in annotated_bases:
+                    _verify_base_matches_domain(
+                        annotated_bases[name],
+                        domain,
+                        description=description,
+                        parameter=name,
+                    )
+                values[name] = draw(domain.strategy)
             else:
                 values[name] = draw(specification)
         return values
@@ -514,7 +549,7 @@ def _ordered_inputs(
 
 def _domain_strategies(
     function: LawFunction, *, description: str
-) -> dict[str, SearchStrategy[Any] | DependentDomain] | None:
+) -> tuple[dict[str, SearchStrategy[Any] | DependentDomain], dict[str, Any]] | None:
     """Resolve annotations to strategies when any of them uses a tlaw domain.
 
     Domains are values, so Hypothesis's own type-based inference cannot
@@ -533,6 +568,7 @@ def _domain_strategies(
         return None
 
     strategies: dict[str, SearchStrategy[Any] | DependentDomain] = {}
+    annotated_bases: dict[str, Any] = {}
     for parameter in inspect.signature(function).parameters.values():
         annotation = annotations.get(parameter.name, inspect.Parameter.empty)
         if annotation is inspect.Parameter.empty:
@@ -545,12 +581,17 @@ def _domain_strategies(
                 "domain or a type"
             )
         if _mentions_domain(annotation):
+            unwrapped = _unwrap_alias(annotation)
+            if get_origin(unwrapped) is Annotated:
+                base, *metadata = get_args(unwrapped)
+                if len(metadata) == 1 and isinstance(metadata[0], DependentDomain):
+                    annotated_bases[parameter.name] = base
             strategies[parameter.name] = _domain_strategy(
                 annotation, description=description, parameter=parameter.name
             )
         else:
             strategies[parameter.name] = st.from_type(annotation)
-    return strategies
+    return strategies, annotated_bases
 
 
 def _unwrap_alias(annotation: Any) -> Any:
@@ -572,7 +613,7 @@ def _contains_annotated_metadata(annotation: Any) -> bool:
     annotation = _unwrap_alias(annotation)
     if get_origin(annotation) is Annotated:
         base, *metadata = get_args(annotation)
-        if len(metadata) == 1 and isinstance(metadata[0], Domain):
+        if len(metadata) == 1 and isinstance(metadata[0], Domain | DependentDomain):
             return _contains_annotated_metadata(base)
         return True
     return any(_contains_annotated_metadata(value) for value in get_args(annotation))
@@ -618,22 +659,44 @@ def system(
 
 
 def _spread(
-    check: Callable[..., None], function: LawFunction
-) -> Callable[[dict[str, Any]], None]:
+    check: Callable[..., None],
+    function: LawFunction,
+    *,
+    generated_names: set[str] | None = None,
+) -> Callable[..., None]:
     """Call the law with one composite draw spread back into its own names.
 
     Dependent domains are drawn together, but the law keeps its natural
     signature, so the values are handed back under the parameter names
     the author wrote. Hypothesis inspects this wrapper's signature, so it
     deliberately does not use ``functools.wraps`` — only the name and doc
-    are copied, for pytest's report.
+    are copied, for pytest's report, while any non-generated parameters
+    (such as pytest fixtures or parametrization) stay on the signature.
     """
+    signature = inspect.signature(function)
+    extra_parameters = (
+        []
+        if generated_names is None
+        else [
+            parameter
+            for name, parameter in signature.parameters.items()
+            if name not in generated_names
+        ]
+    )
 
-    def run(_tlaw_generated: dict[str, Any]) -> None:
-        check(**_tlaw_generated)
+    def run(_tlaw_generated: dict[str, Any], **extra: Any) -> None:
+        check(**_tlaw_generated, **extra)
 
     run.__name__ = function.__name__
     run.__doc__ = function.__doc__
+    run.__signature__ = inspect.Signature(
+        [
+            inspect.Parameter(
+                "_tlaw_generated", inspect.Parameter.POSITIONAL_OR_KEYWORD
+            ),
+            *extra_parameters,
+        ]
+    )
     return run
 
 
@@ -879,15 +942,21 @@ def _inferred_law(
     search: bool,
 ) -> tuple[Callable[[], None], tuple[str, ...], CaseProgress]:
     """Collect one deterministic or search-seeded Hypothesis test."""
-    resolved = _domain_strategies(function, description=description)
-    if resolved is None:
+    resolved_result = _domain_strategies(function, description=description)
+    if resolved_result is None:
         hypothesis_test = given(...)(check)
-    elif any(isinstance(value, DependentDomain) for value in resolved.values()):
-        hypothesis_test = given(
-            _tlaw_generated=_ordered_inputs(resolved, description=description)
-        )(_spread(check, function))
     else:
-        hypothesis_test = given(**resolved)(check)
+        resolved, annotated_bases = resolved_result
+        if any(isinstance(value, DependentDomain) for value in resolved.values()):
+            hypothesis_test = given(
+                _tlaw_generated=_ordered_inputs(
+                    resolved,
+                    description=description,
+                    annotated_bases=annotated_bases,
+                )
+            )(_spread(check, function))
+        else:
+            hypothesis_test = given(**resolved)(check)
     hypothesis_test = settings(
         database=None,
         derandomize=not search,
@@ -900,6 +969,7 @@ def _explicit_law(
     function: LawFunction,
     check: Callable[..., None],
     *,
+    description: str,
     strategies: dict[str, SearchStrategy[Any] | Domain | DependentDomain],
 ) -> tuple[Callable[[], None], tuple[str, ...], CaseProgress]:
     """Collect one test using the strategies the author wrote explicitly.
@@ -912,12 +982,23 @@ def _explicit_law(
     reprs otherwise — and ``--explain`` states the posture.
     """
     inputs = tuple(f"{name}: {value!r}" for name, value in strategies.items())
-    hypothesis_test = given(
-        **{
-            name: value.strategy if isinstance(value, Domain) else value
-            for name, value in strategies.items()
-        }
-    )(check)
+    resolved: dict[str, SearchStrategy[Any] | DependentDomain] = {
+        name: value.strategy if isinstance(value, Domain) else value
+        for name, value in strategies.items()
+    }
+    if any(isinstance(value, DependentDomain) for value in resolved.values()):
+        signature = inspect.signature(function)
+        if not resolved.keys() <= signature.parameters.keys():
+            unknown = ", ".join(sorted(resolved.keys() - signature.parameters.keys()))
+            raise TypeError(
+                f"law '{description}' gives explicit strategies for unknown "
+                f"parameters: {unknown}"
+            )
+        hypothesis_test = given(
+            _tlaw_generated=_ordered_inputs(resolved, description=description)
+        )(_spread(check, function, generated_names=set(resolved)))
+    else:
+        hypothesis_test = given(**resolved)(check)
     return hypothesis_test, inputs, CaseProgress("sampled")
 
 
@@ -991,6 +1072,7 @@ def _decorate_law(
         test, inputs, progress = _explicit_law(
             function,
             check,
+            description=description,
             strategies=strategies,
         )
     return _install_test(
@@ -1012,14 +1094,14 @@ def law(function: LawFunction, /) -> Callable[[], None]: ...
 def law(
     description: str,
     /,
-    **strategies: SearchStrategy[Any] | Domain,
+    **strategies: SearchStrategy[Any] | Domain | DependentDomain,
 ) -> Callable[[LawFunction], Callable[[], None]]: ...
 
 
 def law(
     function_or_description: LawFunction | str,
     /,
-    **strategies: SearchStrategy[Any] | Domain,
+    **strategies: SearchStrategy[Any] | Domain | DependentDomain,
 ) -> Callable[[], None] | Callable[[LawFunction], Callable[[], None]]:
     """Turn an executable law into a Hypothesis test collected by pytest.
 
