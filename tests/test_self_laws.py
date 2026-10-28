@@ -23,6 +23,7 @@ LAW_FILES = (
     "comparison_laws.py",
     "domains_laws.py",
     "paths_laws.py",
+    "exclusion_laws.py",
 )
 # Independent of source discovery and the audit declaration: a lost law fails CI.
 EXPECTED_LAWS = {
@@ -40,6 +41,8 @@ EXPECTED_LAWS = {
     "paths_laws.py::composition_runs_steps_in_declared_order",
     "paths_laws.py::identity_and_grouping_preserve_results",
     "paths_laws.py::paths_start_fresh_on_every_execution",
+    "exclusion_laws.py::mapping_keys_are_searched_for_leaks",
+    "exclusion_laws.py::dataclass_fields_are_searched_and_located",
 }
 CHALLENGES = (
     (
@@ -91,6 +94,16 @@ CHALLENGES = (
         "reuses-state",
         "ReusesState",
         "paths_laws.py::paths_start_fresh_on_every_execution",
+    ),
+    (
+        "skips-mapping-keys",
+        "SkipsMappingKeys",
+        "exclusion_laws.py::mapping_keys_are_searched_for_leaks",
+    ),
+    (
+        "ignores-dataclass-fields",
+        "IgnoresDataclassFields",
+        "exclusion_laws.py::dataclass_fields_are_searched_and_located",
     ),
 )
 

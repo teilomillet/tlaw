@@ -5,12 +5,14 @@ from implementations import (
     CollapsesTuples,
     Core,
     DropsComposedStep,
+    IgnoresDataclassFields,
     IgnoresTolerance,
     LosesIntegerSign,
     PermitsEmptyLists,
     ReusesState,
     ShiftedWireIntegers,
     ShiftsDependency,
+    SkipsMappingKeys,
     WidensIntegerDomain,
 )
 from tlaw.book import Lawbook
@@ -18,7 +20,13 @@ from tlaw.book import Lawbook
 
 evidence = Lawbook(
     __file__,
-    tests=("replay_laws.py", "comparison_laws.py", "domains_laws.py", "paths_laws.py"),
+    tests=(
+        "replay_laws.py",
+        "comparison_laws.py",
+        "domains_laws.py",
+        "paths_laws.py",
+        "exclusion_laws.py",
+    ),
 )
 evidence.baseline("core", Core)
 evidence.known_wrong(
@@ -66,4 +74,14 @@ evidence.known_wrong(
 )
 evidence.known_wrong(
     "reuses-state", ReusesState, breaks="Every path execution starts with fresh state."
+)
+evidence.known_wrong(
+    "skips-mapping-keys",
+    SkipsMappingKeys,
+    breaks="Exclusion searches mapping keys as well as values.",
+)
+evidence.known_wrong(
+    "ignores-dataclass-fields",
+    IgnoresDataclassFields,
+    breaks="Exclusion descends into declared dataclass fields.",
 )

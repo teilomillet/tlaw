@@ -22,8 +22,8 @@ different conclusion.
      pytest suite. Domain-generation laws retain an integer seed and use a
      bounded deterministic draw schedule inside their bodies, so their
      counterexamples remain ordinary replayable inputs.
-   - `selflaws/` is the **challenge suite**. Its four law files run against
-     the real core and ten declared known-wrong implementations, driven by
+   - `selflaws/` is the **challenge suite**. Its five law files run against
+     the real core and twelve declared known-wrong implementations, driven by
      `tlaw check selflaws/` and `tlaw audit selflaws/audit.py`; independent
      pytest checks (`tests/test_self_laws.py`) require each intended rejection,
      detect an always-accepting law checker, and exercise exact counterexample

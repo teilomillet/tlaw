@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import is_dataclass
 from typing import Any
 
 import tlaw
@@ -20,6 +21,7 @@ class Core:
     arrow = staticmethod(arrow)
     identity = staticmethod(identity)
     system = staticmethod(tlaw.system)
+    excludes = staticmethod(tlaw.excludes)
 
     # An audit also substitutes its target as a System's constructor.
     # This tiny counter gives every target the same mutable path fixture.
@@ -110,3 +112,19 @@ class ReusesState(Core):
             return shared
 
         return tlaw.system(implementation, start=start, observe=observe)
+
+
+class SkipsMappingKeys(Core):
+    @staticmethod
+    def excludes(value: Any, *forbidden: Any) -> tlaw.Exclusion:
+        if isinstance(value, dict):
+            return tlaw.excludes(list(value.values()), *forbidden)
+        return tlaw.excludes(value, *forbidden)
+
+
+class IgnoresDataclassFields(Core):
+    @staticmethod
+    def excludes(value: Any, *forbidden: Any) -> tlaw.Exclusion:
+        if is_dataclass(value) and not isinstance(value, type):
+            return tlaw.excludes(None, *forbidden)
+        return tlaw.excludes(value, *forbidden)
