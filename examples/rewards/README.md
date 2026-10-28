@@ -27,9 +27,10 @@ type Shift = Annotated[float, tlaw.number(-1, 1)]
 ```
 
 The base type tells the reader and type checker that these are floats. The tlaw
-domain generates finite values between the inclusive bounds. tlaw currently
-trusts the author to keep those two parts consistent; it does not reject a base
-type that disagrees with its domain.
+domain generates finite values between the inclusive bounds. When tlaw can
+prove the base type and domain disagree — such as `Annotated[str,
+tlaw.number(0, 1)]` — it refuses the declaration at decoration time rather than
+letting the visible contract claim a type the domain never produces.
 
 The first law reads:
 
@@ -46,7 +47,7 @@ The second law says that adding the same finite shift to every reward must not
 change the centered result. Returning `tlaw.same(...)` directly lets a failure
 show both lists and the first index where they differ.
 
-Current limitation: `--explain` prints an alias such as `list[Reward]` instead
-of expanding the attached bounds. The bounds remain visible in this file. See
+`--explain` expands supported PEP 695 aliases such as `list[Reward]` to
+`list[number(0, 1)]`, keeping the generated bounds visible in the output. See
 [current tlaw behavior](../../docs/current-behavior.md) for every supported
 shape and the remaining limits.

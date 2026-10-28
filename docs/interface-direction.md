@@ -47,9 +47,10 @@ The development order is:
 
 1. keep the executable authoring form small — implemented;
 2. make generated inputs and comparison semantics visible — implemented for
-   `--explain`, `number`, `integer`, `one_of`, `list_of`, `depends`, and
-   absolute/relative `same`; randomized search, retained reports, and exact
-   replay are implemented;
+   `--explain`, `number`, `integer`, `one_of`, `list_of`, `recursive`,
+   `record`, `depends`, and absolute/relative `same`; randomized search,
+   exhaustive finite checking, retained reports, and exact replay are
+   implemented;
 3. challenge accepted laws with generated mutations — flat modules, regular
    package boundaries, and namespace-package boundaries are implemented; and
    only then
@@ -120,8 +121,9 @@ Rewards = tlaw.list_of(Reward, min_size=1)
 
 `number` generates finite floats between inclusive bounds, `integer` generates
 bounded counts, `one_of` states a finite set, `list_of` composes a domain or
-ordinary type with visible size bounds, `record` composes named fields into a
-dictionary or a constructed value, and `depends` derives a domain from
+ordinary type with visible size bounds, `recursive` builds finite recursive
+structures within an explicit leaf budget, `record` composes named fields into
+a dictionary or a constructed value, and `depends` derives a domain from
 already drawn parameters. Their descriptions appear in `--explain`, nested
 records included.
 
@@ -207,9 +209,9 @@ The beginner path should require only two new ideas:
 
 Descriptions should come from function names. Input generation should come
 from ordinary type annotations when that is unambiguous. `number`, `integer`,
-`one_of`, `list_of`, and `depends` are the implemented escape hatches paid for
-by real domain bottlenecks; any additional vocabulary must pay for its
-complexity with another demonstrated example.
+`one_of`, `list_of`, `recursive`, `record`, and `depends` are the implemented
+escape hatches paid for by real domain bottlenecks; any additional vocabulary
+must pay for its complexity with another demonstrated example.
 
 The existing path, observation, explicit Hypothesis strategy, and audit APIs
 remain useful experiments and escape hatches. They are not prerequisites for a
@@ -293,13 +295,14 @@ Since this document was first written, several items have earned syntax from
 real probes: generated mutations for flat modules, regular packages, and
 namespace packages (`tlaw mutate`, documented in
 [generated mutation evidence](mutation-evidence.md)); numeric, integer,
-finite-choice, list, and dependent domains; explicit exception contracts; and
-tolerant nested comparison including array shapes (`tlaw.same(left, right,
-within=..., relative=...)`). A checker-clean `Annotated[type, domain]` form is
-also implemented, including PEP 695 aliases and `list[...]`; unrelated or
-mixed metadata is rejected rather than ignored. Proven base/domain mismatches
-are refused, alias bounds are expanded in `--explain`, and `tlaw check` can
-discover law files under a folder.
+finite-choice, list, recursive, record, and dependent domains; explicit
+exception (`raises`), returned-branch (`returns`), and non-leakage (`excludes`)
+contracts; and tolerant nested comparison including array shapes
+(`tlaw.same(left, right, within=..., relative=...)`). A checker-clean
+`Annotated[type, domain]` form is also implemented, including PEP 695 aliases
+and `list[...]`; unrelated or mixed metadata is rejected rather than ignored.
+Proven base/domain mismatches are refused, alias bounds are expanded in
+`--explain`, and `tlaw check` can discover law files under a folder.
 
 The remaining interface is not settled, and this page deliberately does not
 keep its own list of those items: the canonical list of unimplemented surface

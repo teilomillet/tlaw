@@ -101,11 +101,12 @@ instead of being silently honored.
 ## Why the flat folder matters
 
 `tlaw check` works anywhere: laws may import installed packages, live in
-any directory, and pin any importable code. `tlaw mutate` is stricter:
-its boundary is one directory, copied whole for every isolated run, and
-the laws must import the implementation by its module name so the
-mutated copy is what runs.
+any directory, and pin any importable code. `tlaw mutate` copies a single
+boundary — either a flat folder or an installed regular/namespace package —
+for every isolated run, and the laws must import the target module by name
+so the mutated copy is what runs.
 
 Starting a feature as `feature/implementation.py + laws.py` therefore
-gives you the strength meter for free from day one. Package-shaped code
-gets `check` today and waits for multi-module mutation boundaries.
+gives you a self-contained mutation boundary from day one with no package
+scaffolding; package-shaped code uses the package boundary directly, while
+multi-module mutation across several files at once remains unimplemented.
