@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
+from hypothesis import settings
 import pytest
 
 import tlaw
@@ -213,3 +214,83 @@ def test_explicit_law_supports_dependent_domains() -> None:
         )
         def bad_explicit(budget: int, lengths: list[int]) -> bool:
             return True
+
+
+@pytest.mark.parametrize(
+    "parameters", ["resource, budget, lengths", "budget, lengths, *, resource"]
+)
+def test_explicit_dependent_laws_accept_pytest_fixtures(tmp_path, parameters):
+    law_file = tmp_path / "laws.py"
+    law_file.write_text(
+        "import pytest\nimport tlaw\n"
+        "@pytest.fixture(scope='module')\n"
+        "def resource():\n    return 'fixture value'\n"
+        "@tlaw.law('fixture inputs', budget=tlaw.integer(1, 3),\n"
+        "    lengths=tlaw.depends(lambda budget: tlaw.list_of(\n"
+        "        tlaw.integer(1, budget), max_size=3)))\n"
+        f"def uses_fixture({parameters}):\n"
+        "    return resource == 'fixture value' and all(\n"
+        "        1 <= length <= budget for length in lengths)\n",
+        encoding="utf-8",
+    )
+
+    result = tlaw.check(law_file)
+
+    assert result.exit_code == 0, result.output
+    assert "1 passed" in result.output
+
+
+@pytest.mark.parametrize("mark_inside", [False, True])
+def test_explicit_dependent_laws_preserve_pytest_parametrization(tmp_path, mark_inside):
+    law_file = tmp_path / "laws.py"
+    mark = "@pytest.mark.parametrize('resource', ['first', 'second'])\n"
+    law = (
+        "@tlaw.law('parametrized inputs', budget=tlaw.integer(1, 3),\n"
+        "    value=tlaw.depends(lambda budget: tlaw.integer(1, budget)))\n"
+    )
+    law_file.write_text(
+        "import pytest\nimport tlaw\n"
+        + (law + mark if mark_inside else mark + law)
+        + "def parametrized(resource, budget, value):\n"
+        "    return resource in {'first', 'second'} and 1 <= value <= budget\n",
+        encoding="utf-8",
+    )
+
+    result = tlaw.check(law_file)
+
+    assert result.exit_code == 0, result.output
+    assert "2 passed" in result.output
+
+
+def test_explicit_dependent_laws_preserve_inner_skip_mark(tmp_path):
+    law_file = tmp_path / "laws.py"
+    law_file.write_text(
+        "import pytest\nimport tlaw\n"
+        "@tlaw.law('skipped law', budget=tlaw.integer(1, 3),\n"
+        "    value=tlaw.depends(lambda budget: tlaw.integer(1, budget)))\n"
+        "@pytest.mark.skip(reason='deliberately unavailable')\n"
+        "def skipped(budget, value):\n"
+        "    raise AssertionError('skipped law executed')\n",
+        encoding="utf-8",
+    )
+
+    result = tlaw.check(law_file)
+
+    # A skipped law remains incomplete evidence, never a passing law.
+    assert result.exit_code == 2, result.output
+    assert "1 skipped" in result.output
+    assert "skipped law executed" not in result.output
+
+
+def test_explicit_dependent_laws_preserve_inner_hypothesis_settings():
+    observations = []
+
+    @tlaw.law("bounded sampling", budget=Budget, lengths=Lengths)
+    @settings(max_examples=7, derandomize=True, database=None)
+    def bounded_sampling(budget, lengths):
+        observations.append((budget, lengths))
+        return all(1 <= length <= budget for length in lengths)
+
+    bounded_sampling()
+
+    assert len(observations) == 7

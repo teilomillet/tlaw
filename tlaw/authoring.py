@@ -791,10 +791,10 @@ def _spread(
 
     Dependent domains are drawn together, but the law keeps its natural
     signature, so the values are handed back under the parameter names
-    the author wrote. Hypothesis inspects this wrapper's signature, so it
-    deliberately does not use ``functools.wraps`` — only the name and doc
-    are copied, for pytest's report, while any non-generated parameters
-    (such as pytest fixtures or parametrization) stay on the signature.
+    the author wrote. Preserve pytest marks and Hypothesis settings, but
+    expose the composite signature instead of the wrapped law's signature.
+    Non-generated parameters (fixtures or parametrization) keep their
+    calling convention when Hypothesis passes them to this wrapper.
     """
     signature = inspect.signature(function)
     extra_parameters = (
@@ -807,12 +807,7 @@ def _spread(
         ]
     )
 
-    def run(_tlaw_generated: dict[str, Any], **extra: Any) -> None:
-        check(**_tlaw_generated, **extra)
-
-    run.__name__ = function.__name__
-    run.__doc__ = function.__doc__
-    run.__signature__ = inspect.Signature(
+    composite_signature = inspect.Signature(
         [
             inspect.Parameter(
                 "_tlaw_generated", inspect.Parameter.POSITIONAL_OR_KEYWORD
@@ -820,6 +815,14 @@ def _spread(
             *extra_parameters,
         ]
     )
+
+    @wraps(function)
+    def run(*args: Any, **kwargs: Any) -> None:
+        arguments = composite_signature.bind(*args, **kwargs).arguments
+        generated = arguments.pop("_tlaw_generated")
+        check(**generated, **arguments)
+
+    run.__signature__ = composite_signature
     return run
 
 

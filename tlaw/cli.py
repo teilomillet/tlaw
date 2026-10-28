@@ -213,13 +213,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             except ManifestError as error:
                 print(f"tlaw: {error}", file=sys.stderr)
                 return 2
+            print(folder.output, end="")
             if args.exhaustive and folder.exit_code == 2:
                 for item in folder.results:
                     refusal = _unsupported_exhaustive_domain(item.output)
                     if refusal is not None:
-                        _print_exhaustive_refusal(refusal)
-                        return 2
-            print(folder.output, end="")
+                        _print_exhaustive_refusal(f"{item.path}: {refusal}")
             return folder.exit_code
         try:
             if args.replay is not None:

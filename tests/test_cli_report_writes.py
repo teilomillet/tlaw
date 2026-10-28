@@ -100,3 +100,38 @@ def test_folder_check_and_mutate_surface_exhaustive_domain_refusals_on_stderr(
     assert mutate_exit == 2
     assert "exhaustive checking refused this domain" in mutate_captured.err
     assert "does not support number(0, 1)" in mutate_captured.err
+
+
+def test_exhaustive_folder_keeps_all_verdicts_and_locates_every_refusal(
+    tmp_path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cases = (
+        ("a_refused_laws.py", "tlaw.number(0, 1)", "True", "ERROR"),
+        ("b_refused_laws.py", "tlaw.number(2, 3)", "True", "ERROR"),
+        ("c_failed_laws.py", "bool", "False", "FAIL"),
+        ("d_passed_laws.py", "bool", "True", "PASS"),
+    )
+    for name, domain, result, _ in cases:
+        (tmp_path / name).write_text(
+            "import tlaw\n@tlaw.law\n"
+            f"def example(value: {domain}):\n    return {result}\n",
+            encoding="utf-8",
+        )
+
+    exit_code = main(["check", str(tmp_path), "--exhaustive"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    for name, _, _, verdict in cases:
+        assert any(
+            line.strip().startswith(verdict) and line.endswith(str(tmp_path / name))
+            for line in captured.out.splitlines()
+        ), captured.out
+    assert "1 of 4 law file(s) passed" in captured.out
+    for name, domain, _, _ in cases[:2]:
+        assert (
+            f"{tmp_path / name}: exhaustive checking does not support "
+            f"{domain.removeprefix('tlaw.')}"
+        ) in captured.err
+    assert captured.err.count("exhaustive checking refused this domain") == 2
+    assert "Traceback" not in captured.out + captured.err
