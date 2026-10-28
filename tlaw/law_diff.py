@@ -86,6 +86,12 @@ class _ListDomain:
     maximum: int | None
 
 
+@dataclass(frozen=True)
+class _RecordDomain:
+    constructor: str | None
+    fields: tuple[tuple[str, object], ...]
+
+
 def _run_git(repository: Path, *arguments: str) -> bytes:
     try:
         completed = subprocess.run(
@@ -388,6 +394,9 @@ def _subscript_parts(node: ast.Subscript) -> tuple[ast.AST, ...]:
 
 
 def _domain_model(node: ast.AST) -> object | None:
+    if isinstance(node, ast.Name) and node.id == "bool":
+        return _Finite(frozenset((repr(False), repr(True))))
+
     if isinstance(node, ast.Subscript):
         name = _call_name(node.value)
         parts = _subscript_parts(node)
@@ -399,6 +408,15 @@ def _domain_model(node: ast.AST) -> object | None:
                     ast.dump(parts[0], include_attributes=False),
                     metadata,
                 )
+        if name == "Literal" and parts:
+            values = []
+            for part in parts:
+                try:
+                    value = ast.literal_eval(part)
+                except (ValueError, TypeError, SyntaxError):
+                    return None
+                values.append(repr(value))
+            return _Finite(frozenset(values))
         if name in {"list", "List"} and len(parts) == 1:
             element = _domain_model(parts[0])
             if element is None:
@@ -429,6 +447,30 @@ def _domain_model(node: ast.AST) -> object | None:
         if not isinstance(values, list | tuple | set | frozenset):
             return None
         return _Finite(frozenset(repr(value) for value in values))
+    if name == "record":
+        if (
+            len(node.args) > 1
+            or not node.keywords
+            or any(keyword.arg is None for keyword in node.keywords)
+        ):
+            return None
+        constructor = (
+            ast.dump(node.args[0], include_attributes=False) if node.args else None
+        )
+        fields = []
+        for keyword in node.keywords:
+            assert keyword.arg is not None
+            field_model = _domain_model(keyword.value)
+            if field_model is None:
+                field_model = (
+                    "plain",
+                    ast.dump(keyword.value, include_attributes=False),
+                )
+            fields.append((keyword.arg, field_model))
+        return _RecordDomain(
+            constructor=constructor,
+            fields=tuple(sorted(fields)),
+        )
     if name == "list_of":
         element_node = _call_argument(node, 0, "element")
         if element_node is None:
@@ -513,6 +555,19 @@ def _model_relation(old: object, new: object) -> DomainRelation:
                 new.minimum,
                 new.maximum,
             ),
+        )
+    if isinstance(old, _RecordDomain) and isinstance(new, _RecordDomain):
+        if old.constructor != new.constructor:
+            return "changed"
+        old_fields = dict(old.fields)
+        new_fields = dict(new.fields)
+        if old_fields.keys() != new_fields.keys():
+            return "changed"
+        return _combine_relations(
+            *(
+                _model_relation(old_fields[field_name], new_fields[field_name])
+                for field_name in old_fields
+            )
         )
     if (
         isinstance(old, tuple)

@@ -93,8 +93,8 @@ Both revisions are read with `git cat-file` and parsed with Python's AST. They
 are never checked out, imported, or executed. Formatting, comments, and a
 function's leading docstring do not change its parsed body. Simple module-level
 aliases used by annotations are expanded for comparison, including literal
-`number`, `integer`, `one_of`, `list_of`, `list[...]`, and supported
-`Annotated` shapes.
+`bool`, `Literal[...]`, `number`, `integer`, `one_of`, `list_of`, `record`,
+`list[...]`, and supported `Annotated` shapes.
 
 Narrowing or widening is reported only when the old and new literal domains
 prove a subset relation. Dynamic bounds, dependent builders, mixed

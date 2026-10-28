@@ -408,3 +408,85 @@ def test_diff_cli_has_distinct_change_no_change_and_error_exits(
     assert "No law changes." in capsys.readouterr().out
     assert main(["diff", "not-a-range"]) == 2
     assert "tlaw:" in capsys.readouterr().err
+
+
+def test_diff_classifies_literal_bool_and_record_domain_refinements(
+    tmp_path: Path,
+) -> None:
+    repository = _repository(tmp_path)
+    base = _commit(
+        repository,
+        "base",
+        **{
+            "laws.py": """\
+                from typing import Literal
+                import tlaw
+
+                Command = tlaw.record(
+                    kind=tlaw.one_of(["credit", "debit"]),
+                    amount=tlaw.integer(0, 10),
+                )
+
+                @tlaw.law
+                def handles_command(
+                    command: Command,
+                    mode: Literal["fast", "safe"],
+                    enabled: bool,
+                ):
+                    return command["amount"] >= 0
+            """,
+        },
+    )
+    narrowed = _commit(
+        repository,
+        "narrow record and literal domains",
+        **{
+            "laws.py": """\
+                from typing import Literal
+                import tlaw
+
+                Command = tlaw.record(
+                    kind=tlaw.one_of(["credit"]),
+                    amount=tlaw.integer(1, 5),
+                )
+
+                @tlaw.law
+                def handles_command(
+                    command: Command,
+                    mode: Literal["safe"],
+                    enabled: Literal[True],
+                ):
+                    return command["amount"] >= 0
+            """,
+        },
+    )
+    assert tlaw.diff(f"{base}..{narrowed}", repository=repository).changes[
+        0
+    ].classifications == ("domain narrowed",)
+
+    widened = _commit(
+        repository,
+        "widen record and literal domains",
+        **{
+            "laws.py": """\
+                from typing import Literal
+                import tlaw
+
+                Command = tlaw.record(
+                    kind=tlaw.one_of(["credit", "debit", "refund"]),
+                    amount=tlaw.integer(0, 20),
+                )
+
+                @tlaw.law
+                def handles_command(
+                    command: Command,
+                    mode: Literal["fast", "safe", "audit"],
+                    enabled: bool,
+                ):
+                    return command["amount"] >= 0
+            """,
+        },
+    )
+    assert tlaw.diff(f"{narrowed}..{widened}", repository=repository).changes[
+        0
+    ].classifications == ("domain widened",)
