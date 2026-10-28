@@ -694,9 +694,13 @@ The current structural rules are:
 - strings and bytes compare exactly and preserve their type distinction;
 - lists and tuples compare item by item;
 - dictionaries require the same keys and compare values recursively;
-- recursive list and dictionary graphs use pair memoization: revisiting the
-  same left/right container pair establishes that already-observed relation,
-  while differences on finite paths beside a cycle are still reported;
+- dataclasses of the same type compare field by field, so tolerances apply
+  inside dataclass fields and differences name the field path (such as
+  `value.point.x`);
+- recursive list, dictionary, and dataclass graphs use pair memoization:
+  revisiting the same left/right container pair establishes that
+  already-observed relation, while differences on finite paths beside a cycle
+  are still reported;
 - objects exposing `shape`, `dtype`, and `tolist()` have their explicit shapes
   compared first, then are converted to nested Python values. Checking shape
   separately distinguishes empty arrays such as `(0, 2)` and `(0, 3)`, which

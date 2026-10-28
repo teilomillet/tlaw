@@ -4,11 +4,11 @@ What
 ----
 ``same(left, right, within=..., relative=...)`` compares two values
 structurally — numbers with explicit absolute and relative tolerances,
-strings exactly, lists, tuples, and dicts element by element, and
-array-likes (NumPy, and any object exposing ``shape``/``dtype``/``tolist``)
-by converting them to nested lists first. It returns a ``Comparison`` that
-is truthy when the values agree and that retains both sides and the first
-difference for the failure message.
+strings exactly, lists, tuples, dicts, and same-type dataclasses element or
+field by field, and array-likes (NumPy, and any object exposing
+``shape``/``dtype``/``tolist``) by converting them to nested lists first. It
+returns a ``Comparison`` that is truthy when the values agree and that retains
+both sides and the first difference for the failure message.
 
 Why
 ---
@@ -49,7 +49,7 @@ How
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from fractions import Fraction
 from typing import Any, Callable
 
@@ -329,6 +329,24 @@ def _first_difference(
                 within,
                 relative,
                 f"{path}[{key!r}]",
+                seen_pairs,
+            )
+            if found is not None:
+                return found
+        return None
+
+    if is_dataclass(left) and not isinstance(left, type) and type(left) is type(right):
+        pair = (id(left), id(right))
+        if pair in seen_pairs:
+            return None
+        seen_pairs.add(pair)
+        for member in fields(left):
+            found = _first_difference(
+                getattr(left, member.name),
+                getattr(right, member.name),
+                within,
+                relative,
+                f"{path}.{member.name}",
                 seen_pairs,
             )
             if found is not None:

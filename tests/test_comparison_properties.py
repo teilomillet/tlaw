@@ -8,6 +8,7 @@ sides retained with the first difference for the failure message.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 import pytest
 from hypothesis import given
@@ -341,3 +342,43 @@ def test_relative_must_be_a_finite_non_negative_number() -> None:
         same(1.0, 1.0, relative=math.inf)
     with pytest.raises(TypeError):
         same(1.0, 1.0, relative=True)
+
+
+def test_dataclasses_compare_field_by_field_with_tolerance_and_named_paths() -> None:
+    @dataclass(frozen=True)
+    class Point:
+        x: float
+        y: float
+
+    @dataclass(frozen=True)
+    class Sample:
+        label: str
+        point: Point
+
+    left = Sample(label="run", point=Point(0.1 + 0.2, 1.0))
+    right = Sample(label="run", point=Point(0.3, 1.25))
+
+    assert same(left, Sample(label="run", point=Point(0.3, 1.0)), within=1e-12).matched
+
+    comparison = same(left, right, within=0.1)
+    assert not comparison.matched
+    assert comparison.difference.path == ".point.y"
+    assert comparison.difference.left == 1.0
+    assert comparison.difference.right == 1.25
+    assert "first difference at value.point.y:" in comparison.explain()
+
+
+def test_different_dataclass_types_do_not_match_by_field_name() -> None:
+    @dataclass(frozen=True)
+    class First:
+        value: int
+
+    @dataclass(frozen=True)
+    class Second:
+        value: int
+
+    comparison = same(First(1), Second(1))
+    assert not comparison.matched
+    assert comparison.difference.path == ""
+    assert comparison.difference.reason == "values differ"
+    assert not same(First, First(1)).matched

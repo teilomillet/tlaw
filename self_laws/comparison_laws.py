@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 import tlaw
 from tlaw.comparison import same
@@ -125,6 +126,33 @@ def mapping_cycles_use_the_same_structural_semantics(value: SmallInt) -> bool:
         right["value"] = value + 1
         difference = same(left, right).difference
         return difference is not None and difference.path == "['value']"
+    except RecursionError:
+        return False
+
+
+@tlaw.law
+def dataclass_fields_and_cycles_compare_structurally_with_tolerance(
+    value: SmallInt,
+) -> bool:
+    @dataclass
+    class Node:
+        peer: object
+        score: float
+
+    try:
+        left = Node(peer=None, score=float(value))
+        right = Node(peer=None, score=value + 0.25)
+        left.peer = left
+        right.peer = right
+        if not same(left, right, within=0.5).matched:
+            return False
+        difference = same(left, right, within=0.1).difference
+        return (
+            difference is not None
+            and difference.path == ".score"
+            and difference.left == float(value)
+            and difference.right == value + 0.25
+        )
     except RecursionError:
         return False
 
