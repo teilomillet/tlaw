@@ -6,6 +6,41 @@ files into this document when the release is prepared.
 
 <!-- towncrier release notes start -->
 
+## 0.0.13 — 2026-10-29
+
+### Added
+
+- Add `Exclusion.and_then(...)` to chain another claim after a passing
+  non-leakage check without losing the located leak report.
+- Classify narrowing and widening of `bool`, `Literal[...]`, and
+  `tlaw.record(...)` domains in `tlaw diff`.
+- Compare same-type `@dataclass` instances field by field in `tlaw.same(...)`
+  so numeric tolerances apply inside dataclass fields and failures report the
+  differing field path.
+- Support `tlaw.depends(...)` in `Annotated[T, ...]` parameter annotations and
+  in explicit `@tlaw.law("description", ...)` declarations.
+- Support `within=` and `relative=` tolerances on `Path.same_as(...)` and
+  `.and_then(...)` claim chaining on stateful path `Equation` objects.
+
+### Changed
+
+- Use structural comparison for path equations, so lists and tuples with
+  matching elements compare equal while booleans remain distinct from numbers.
+
+### Fixed
+
+- Keep every file verdict and identify each refused domain by its file path
+  when checking folders exhaustively.
+- Preserve pytest fixture arguments, parametrization, marks, and Hypothesis
+  settings in laws with dependent inputs.
+- Surface actionable domain-refusal guidance on stderr when `tlaw check
+  <folder> --exhaustive` or `tlaw mutate ... --exhaustive` encounters an
+  unsupported finite domain.
+- Traverse `@dataclass` fields and cyclic container pairs in `@tlaw.law`'s
+  input-mutation guard so unchanged NaN fields and self-referential structures
+  are not misreported as mutated inputs.
+
+
 ## 0.0.12 — 2026-10-24
 
 ### Added
