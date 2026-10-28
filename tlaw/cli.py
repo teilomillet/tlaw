@@ -152,6 +152,19 @@ def _unsupported_exhaustive_domain(output: str) -> str | None:
     return None
 
 
+def _print_exhaustive_refusal(refusal: str) -> None:
+    print(
+        f"tlaw: exhaustive checking refused this domain: {refusal}",
+        file=sys.stderr,
+    )
+    print(
+        "tlaw: remove --exhaustive or declare a supported finite domain "
+        "(bool, None, Literal, integer, one_of, bounded list_of, or "
+        "dictionary-form record)",
+        file=sys.stderr,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.command == "diff":
@@ -200,6 +213,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             except ManifestError as error:
                 print(f"tlaw: {error}", file=sys.stderr)
                 return 2
+            if args.exhaustive and folder.exit_code == 2:
+                for item in folder.results:
+                    refusal = _unsupported_exhaustive_domain(item.output)
+                    if refusal is not None:
+                        _print_exhaustive_refusal(refusal)
+                        return 2
             print(folder.output, end="")
             return folder.exit_code
         try:
@@ -242,16 +261,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 # The collections traceback is noise: the domain refusal is
                 # complete evidence on its own. Keep the verdict and exit code
                 # identical, and leave the full output on the Python API result.
-                print(
-                    f"tlaw: exhaustive checking refused this domain: {refusal}",
-                    file=sys.stderr,
-                )
-                print(
-                    "tlaw: remove --exhaustive or declare a supported finite domain "
-                    "(bool, None, Literal, integer, one_of, bounded list_of, or "
-                    "dictionary-form record)",
-                    file=sys.stderr,
-                )
+                _print_exhaustive_refusal(refusal)
                 return 2
         print(result.output, end="" if result.output.endswith("\n") else "\n")
         if args.json_path is not None:
@@ -310,7 +320,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ManifestError as error:
             print(f"tlaw: {error}", file=sys.stderr)
             return 2
-        print(result.render_text())
+        rendered = result.render_text()
+        print(rendered)
+        if args.exhaustive and result.has_errors:
+            refusal = _unsupported_exhaustive_domain(rendered)
+            if refusal is not None:
+                _print_exhaustive_refusal(refusal)
         if args.json_path is not None:
             try:
                 _write_report(args.json_path, result.to_json())

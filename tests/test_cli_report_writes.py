@@ -67,3 +67,36 @@ def test_unsupported_exhaustive_domain_is_reported_without_a_traceback(
     assert "does not support number(0, 1)" in captured.err
     assert "Traceback" not in captured.err
     assert "Traceback" not in captured.out
+
+
+def test_folder_check_and_mutate_surface_exhaustive_domain_refusals_on_stderr(
+    tmp_path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    law_file = tmp_path / "laws.py"
+    impl_file = tmp_path / "implementation.py"
+    impl_file.write_text(
+        "def clamp(x: float) -> float:\n    return max(0.0, min(1.0, x))\n",
+        encoding="utf-8",
+    )
+    law_file.write_text(
+        "import tlaw\n"
+        "from implementation import clamp\n\n"
+        "Reward = tlaw.number(0, 1)\n\n"
+        "@tlaw.law\n"
+        "def stays_in_range(reward: Reward) -> bool:\n"
+        "    return 0.0 <= clamp(reward) <= 1.0\n",
+        encoding="utf-8",
+    )
+
+    folder_exit = main(["check", str(tmp_path), "--exhaustive"])
+    folder_captured = capsys.readouterr()
+    assert folder_exit == 2
+    assert "exhaustive checking refused this domain" in folder_captured.err
+    assert "does not support number(0, 1)" in folder_captured.err
+    assert "Traceback" not in folder_captured.out
+
+    mutate_exit = main(["mutate", str(law_file), str(impl_file), "--exhaustive"])
+    mutate_captured = capsys.readouterr()
+    assert mutate_exit == 2
+    assert "exhaustive checking refused this domain" in mutate_captured.err
+    assert "does not support number(0, 1)" in mutate_captured.err
