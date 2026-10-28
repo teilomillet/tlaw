@@ -48,9 +48,12 @@ An inferred law may return:
 - one Python `bool`;
 - a `tlaw.Comparison` from `tlaw.same(...)`, optionally chained through
   `.and_then(...)`;
-- a `tlaw.Refusal` from `tlaw.raises(...)`;
-- a `tlaw.Outcome` from `tlaw.returns(...)`;
-- a `tlaw.Exclusion` from `tlaw.excludes(...)`;
+- a `tlaw.Refusal` from `tlaw.raises(...)`, optionally chained through
+  `.and_then(...)`;
+- a `tlaw.Outcome` from `tlaw.returns(...)`, optionally chained through
+  `.and_then(...)`;
+- a `tlaw.Exclusion` from `tlaw.excludes(...)`, optionally chained through
+  `.and_then(...)`;
 - a path `Equation` from `.same_as(...)`; or
 - `None`, which is useful when the body raises its own assertion.
 
@@ -829,7 +832,10 @@ never a `repr`.
 A `bytes` fragment is looked for in `bytes` and a `str` fragment in `str`;
 tlaw does not guess an encoding to bridge them. An empty fragment, a
 non-string fragment, and a call with no fragments at all are refused, because
-each would make the law unfalsifiable.
+each would make the law unfalsifiable. `Exclusion.and_then(...)` chains a
+zero-argument follow-up claim on the same short-circuiting terms as
+`Comparison.and_then(...)`, keeping the located leak report when a forbidden
+fragment was found.
 
 ## Stateful paths
 

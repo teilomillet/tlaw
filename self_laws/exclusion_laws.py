@@ -150,3 +150,18 @@ def reports_truncate_only_above_the_exact_limit(value: SmallInt) -> bool:
     exact = excludes(exact_value, "x").explain()
     truncated = excludes(long_value, "x").explain()
     return "... (200 characters)" not in exact and "... (201 characters)" in truncated
+
+
+@tlaw.law
+def chained_claims_run_only_after_a_clean_value(value: SmallInt) -> bool:
+    observed = False
+
+    def observe() -> bool:
+        nonlocal observed
+        observed = True
+        return True
+
+    leaked = excludes({"detail": f"{value}: {SECRET}"}, SECRET)
+    if leaked.and_then(observe) is not leaked or observed:
+        return False
+    return excludes({"detail": value}, SECRET).and_then(observe) is True and observed

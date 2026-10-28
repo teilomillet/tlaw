@@ -9,8 +9,8 @@ output, third-party pytest plugin isolation, `tlaw check --explain`; visible
 `number`/`integer`/`one_of`/`list_of`/`recursive`/`record`/`depends` domains,
 including dictionary-form records and finite recursive values; retained `same`
 comparisons with absolute and relative tolerance; `raises`, `returns`, and
-`excludes` claim objects, with `.and_then(...)` available on the `same`,
-`raises`, and `returns` claims (not on `excludes`); declared audits;
+`excludes` claim objects, with `.and_then(...)` available on `same`, `raises`,
+`returns`, and `excludes`; declared audits;
 generated mutation evidence for flat modules, regular packages, and namespace
 packages, with opt-in exhaustive mutation, campaign planning (`--plan`,
 `--max-runs`), and exact mutant-ID reruns (`--mutant`); opt-in exhaustive

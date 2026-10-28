@@ -103,7 +103,8 @@ domains, structural comparison, stateful paths, and mutation evidence:
   that returns its failure instead of raising it, and `.and_then(...)` adds a
   second claim without losing the first one's explanation;
 - `excludes(value, *fragments)` states that no internal detail leaks,
-  searching nested structures and reporting where a fragment was found;
+  searching nested structures and reporting where a fragment was found, and
+  `.and_then(...)` adds a follow-up claim when the value is clean;
 - `tlaw check laws.py --explain` runs the laws and reports what it generated;
 - `tlaw check laws.py --exhaustive` checks every combination of supported finite
   inputs, with separate counts and completion evidence;

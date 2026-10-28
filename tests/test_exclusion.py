@@ -205,3 +205,35 @@ def test_excludes_composes_with_and_then_after_a_return_branch() -> None:
     assert bool(clean) is True
     assert bool(leaked) is False
     assert "forbidden fragment" in leaked.explain()
+
+
+def test_and_then_states_a_second_claim_after_a_clean_exclusion() -> None:
+    reply = {"status": "technical_failure", "detail": "profile_unavailable"}
+
+    matched = excludes(reply, HOST).and_then(
+        lambda: tlaw.same(reply["status"], "technical_failure")
+    )
+    mismatched = excludes(reply, HOST).and_then(
+        lambda: tlaw.same(reply["status"], "caller_error")
+    )
+
+    assert bool(matched) is True
+    assert bool(mismatched) is False
+    assert "technical_failure" in mismatched.explain()
+    assert "caller_error" in mismatched.explain()
+
+
+def test_and_then_keeps_the_exclusion_and_skips_the_next_claim_on_a_leak() -> None:
+    observed = False
+    leaked = excludes({"detail": f"connect {HOST}"}, HOST)
+
+    def next_claim() -> bool:
+        nonlocal observed
+        observed = True
+        return True
+
+    result = leaked.and_then(next_claim)
+
+    assert result is leaked
+    assert observed is False
+    assert f"forbidden fragment '{HOST}'" in result.explain()

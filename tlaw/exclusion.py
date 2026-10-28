@@ -49,7 +49,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 
 from .claims import Claim, _short
 
@@ -93,6 +93,28 @@ class Exclusion(Claim):
         if where.path:
             lines.append(f"value: {_short(self.value)}")
         return "\n".join(lines)
+
+    def and_then(self, observe: Callable[[], Any]) -> Any:
+        """State another claim after this exclusion check has passed.
+
+        A redaction law often accompanies a structural or branch claim — for
+        example, that a serialized reply leaks no internal hostname *and*
+        carries the expected public status code, or that two separate secrets
+        are excluded with distinct failure explanations. Writing them with
+        ``and`` converts the first exclusion to a bare boolean and loses the
+        located leak. ``and_then`` keeps this ``Exclusion`` when a leak was
+        found and otherwise evaluates the next claim::
+
+            return tlaw.excludes(reply, hostname, "Traceback").and_then(
+                lambda: tlaw.same(reply["status"], "technical_failure")
+            )
+
+        ``observe`` takes no argument because an exclusion verifies absence
+        rather than extracting a new payload. The next result may be another
+        ``Exclusion``, a ``Comparison``, a ``Refusal``, an ``Outcome``, or a
+        bool.
+        """
+        return self._continue_claim(observe)
 
 
 # The leaves tlaw can read faithfully: text and bytes by containment, and
