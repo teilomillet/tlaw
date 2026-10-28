@@ -51,6 +51,44 @@ def test_failed_equation_explains_both_paths_and_observations() -> None:
     assert "1" in message
 
 
+def test_path_equation_supports_tolerances_and_and_then_chaining() -> None:
+    accumulator = tlaw.system(
+        Counter, observe=lambda value: value.value, name="accumulator"
+    )
+    left = accumulator(0.0).call("add", 0.1).call("add", 0.2)
+    right = accumulator(0.0).call("add", 0.3)
+
+    assert left.same_as(right, within=1e-12).check("float path tolerance") is None
+
+    called = False
+
+    def follow_up(observed: float) -> tlaw.Comparison:
+        nonlocal called
+        called = True
+        return tlaw.same(observed, 0.3, within=1e-12)
+
+    assert (
+        left.same_as(right, within=1e-12).and_then(follow_up).check("chained") is None
+    )
+    assert called is True
+
+    skipped = False
+
+    def should_not_run() -> bool:
+        nonlocal skipped
+        skipped = True
+        return True
+
+    with pytest.raises(AssertionError, match="accumulator"):
+        left.same_as(right).and_then(should_not_run).check("exact float path fails")
+    assert skipped is False
+
+    with pytest.raises(AssertionError, match="first difference at value"):
+        left.same_as(right, within=1e-12).and_then(
+            lambda left_obs, right_obs: tlaw.same(left_obs + right_obs, 1.0)
+        ).check("follow-up fails")
+
+
 def test_law_decorator_runs_hypothesis_without_requiring_a_test_name() -> None:
     values = tlaw.system(lambda value: value)
 

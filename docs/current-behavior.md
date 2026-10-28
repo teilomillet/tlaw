@@ -54,7 +54,8 @@ An inferred law may return:
   `.and_then(...)`;
 - a `tlaw.Exclusion` from `tlaw.excludes(...)`, optionally chained through
   `.and_then(...)`;
-- a path `Equation` from `.same_as(...)`; or
+- a path `Equation` from `.same_as(...)`, optionally with `within=`/`relative=`
+  tolerances and chained through `.and_then(...)`; or
 - `None`, which is useful when the body raises its own assertion.
 
 Any other return value, whether truthy or falsy, is rejected. This keeps
@@ -848,9 +849,12 @@ fragment was found.
 
 For mutable behavior, `tlaw.system(...)` defines how to construct a fresh
 value and how to observe it. Calling the system creates an immutable path.
-`.call(...)`, `.do(...)`, and `.then(...)` append steps; `.same_as(...)`
-creates an equation between two paths. Each side builds a fresh start before it
-runs, so one path cannot mutate the other's starting object.
+`.call(...)`, `.do(...)`, and `.then(...)` append steps; `.same_as(..., within=0.0, relative=0.0)`
+creates an equation between two paths using `tlaw.same`'s structural comparison
+and tolerances, and `Equation.and_then(...)` chains a follow-up claim (taking
+0, 1, or 2 observed results) that runs only when the two paths agree. Each side
+builds a fresh start before it runs, so one path cannot mutate the other's
+starting object.
 
 This path vocabulary is also the implemented categorical core: an internal
 arrow is an immutable tuple of steps, composition concatenates tuples, and the

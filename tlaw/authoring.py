@@ -31,7 +31,7 @@ from hypothesis.strategies import SearchStrategy
 
 from .audit import TARGET_ENV
 from .category import Arrow, arrow, identity
-from .comparison import Comparison
+from .comparison import Comparison, _tolerance, same
 from .domains import DependentDomain, Domain, generation_order
 from .exclusion import Exclusion
 from .finite import DEFAULT_MAX_CASES, MAX_CASES_ENV, finite_plan
@@ -147,11 +147,22 @@ class Path(Generic[Value, Observation]):
             >> arrow(perform, name=_call_text(method, args, kwargs)),
         )
 
-    def same_as(self, other: Path[Value, Observation]) -> Equation[Observation]:
+    def same_as(
+        self,
+        other: Path[Value, Observation],
+        *,
+        within: float = 0.0,
+        relative: float = 0.0,
+    ) -> Equation[Observation]:
         """State that two paths should have the same observation."""
         if self.system is not other.system:
             raise ValueError("parallel paths must belong to the same tlaw system")
-        return Equation(left=self, right=other)
+        return Equation(
+            left=self,
+            right=other,
+            within=_tolerance(within, name="within"),
+            relative=_tolerance(relative, name="relative"),
+        )
 
     def result(self) -> Observation:
         """Execute this path from a fresh start and observe its result."""
@@ -169,22 +180,106 @@ class Path(Generic[Value, Observation]):
         return f"{start}.{calls}"
 
 
+def _equation_follow_up_arity(observe: Callable[..., Any]) -> int:
+    if not callable(observe):
+        raise TypeError("and_then() needs a callable that states the next claim")
+    try:
+        signature = inspect.signature(observe)
+    except (TypeError, ValueError):
+        return 0
+    for parameter in signature.parameters.values():
+        if parameter.kind is inspect.Parameter.VAR_POSITIONAL:
+            return 2
+        if (
+            parameter.kind is inspect.Parameter.KEYWORD_ONLY
+            and parameter.default is inspect.Parameter.empty
+        ):
+            raise TypeError(
+                "Equation.and_then() callback cannot require keyword-only arguments"
+            )
+    positional = [
+        parameter
+        for parameter in signature.parameters.values()
+        if parameter.kind
+        in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        )
+    ]
+    required = [
+        parameter
+        for parameter in positional
+        if parameter.default is inspect.Parameter.empty
+    ]
+    if len(required) > 2 or len(positional) == 0 and len(required) > 0:
+        raise TypeError(
+            "Equation.and_then() callback must take 0, 1 (observed), or 2 "
+            "(left_observed, right_observed) positional arguments"
+        )
+    return min(len(positional), 2)
+
+
+def _check_law_result(result: Any, *, description: str) -> None:
+    if isinstance(result, Equation | Comparison | Refusal | Outcome | Exclusion):
+        result.check(description)
+    elif result is False:
+        raise AssertionError(f"law failed: {description}")
+    elif result is not True and result is not None:
+        result_type = f"{type(result).__module__}.{type(result).__qualname__}"
+        raise TypeError(
+            f"law '{description}' returned {result_type}, not one Python "
+            "boolean; some libraries return one value per element, so tlaw "
+            "cannot unambiguously decide whether the law passed"
+        )
+
+
 @dataclass(frozen=True)
 class Equation(Generic[Observation]):
     """Two executable paths asserted to have equal observations."""
 
     left: Path[Any, Observation]
     right: Path[Any, Observation]
+    within: float = 0.0
+    relative: float = 0.0
+    follow_ups: tuple[tuple[int, Callable[..., Any]], ...] = field(
+        default=(), repr=False
+    )
+
+    def and_then(self, observe: Callable[..., Any]) -> Equation[Observation]:
+        """State another claim after both paths produce matching observations.
+
+        ``observe`` may take zero arguments, one argument (the left path's
+        observation), or two arguments (both observations), and may return
+        any tlaw claim, another ``Equation``, or a boolean. If the two paths
+        diverge, ``observe`` is not called and the path failure is reported.
+        """
+        arity = _equation_follow_up_arity(observe)
+        return replace(self, follow_ups=(*self.follow_ups, (arity, observe)))
 
     def check(self, description: str = "law") -> None:
         left_result = self.left.result()
         right_result = self.right.result()
-        if left_result != right_result:
+        comparison = same(
+            left_result,
+            right_result,
+            within=self.within,
+            relative=self.relative,
+        )
+        if not comparison.matched:
             raise AssertionError(
                 f"law failed: {description}\n"
                 f"  {self.left.render()} -> {left_result!r}\n"
-                f"  {self.right.render()} -> {right_result!r}"
+                f"  {self.right.render()} -> {right_result!r}\n"
+                f"  {comparison.explain()}"
             )
+        for arity, observe in self.follow_ups:
+            if arity == 0:
+                next_claim = observe()
+            elif arity == 1:
+                next_claim = observe(left_result)
+            else:
+                next_claim = observe(left_result, right_result)
+            _check_law_result(next_claim, description=description)
 
 
 LawResult = Equation[Any] | Comparison | Refusal | Outcome | Exclusion | bool | None
