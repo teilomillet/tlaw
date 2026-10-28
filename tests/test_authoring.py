@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
@@ -104,6 +105,60 @@ def test_bare_law_rejects_a_false_pass_after_mutating_its_input() -> None:
         match="passed after mutating generated input 'values'",
     ):
         clearing_a_list_changes_nothing()
+
+
+@dataclass
+class _MutableSample:
+    score: float
+    items: list[int]
+    peer: object = None
+
+    def __deepcopy__(self, memo: dict[int, object]) -> _MutableSample:
+        if id(self) in memo:
+            return memo[id(self)]  # type: ignore[return-value]
+        copied = _MutableSample(
+            score=float("nan") if self.score != self.score else float(self.score),
+            items=list(self.items),
+        )
+        memo[id(self)] = copied
+        copied.peer = copied if self.peer is self else self.peer
+        return copied
+
+
+SampleDomain = tlaw.record(
+    _MutableSample,
+    score=tlaw.one_of([float("nan"), 1.0]),
+    items=tlaw.list_of(tlaw.integer(0, 2), max_size=2),
+)
+
+
+def test_input_mutation_guard_handles_dataclass_nan_cycles_and_mutations() -> None:
+    from tlaw.authoring import _copied_value_is_unchanged
+
+    cyclic = _MutableSample(score=float("nan"), items=[1, 2])
+    cyclic.peer = cyclic
+    copied = cyclic.__deepcopy__({})
+    assert _copied_value_is_unchanged(cyclic, copied) is True
+
+    copied.items.append(3)
+    assert _copied_value_is_unchanged(cyclic, copied) is False
+
+    @tlaw.law
+    def pure_dataclass_law(sample: SampleDomain) -> bool:
+        return isinstance(sample.items, list)
+
+    pure_dataclass_law()
+
+    @tlaw.law
+    def mutating_dataclass_law(sample: SampleDomain) -> bool:
+        sample.items.append(99)
+        return True
+
+    with pytest.raises(
+        AssertionError,
+        match="passed after mutating generated input 'sample'",
+    ):
+        mutating_dataclass_law()
 
 
 def test_an_unverifiable_input_is_a_harness_limit_not_a_refutation() -> None:

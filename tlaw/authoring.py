@@ -8,7 +8,7 @@ import math
 import os
 import types
 from typing import Union
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields, is_dataclass, replace
 from functools import wraps
 from pathlib import Path as FilePath
 from typing import (
@@ -205,7 +205,11 @@ class UnverifiableInputError(TypeError):
     """
 
 
-def _copied_value_is_unchanged(before: Any, after: Any) -> bool | None:
+def _copied_value_is_unchanged(
+    before: Any,
+    after: Any,
+    seen_pairs: set[tuple[int, int]] | None = None,
+) -> bool | None:
     """Compare copied inputs conservatively without guessing array truth values."""
     if before is after:
         return True
@@ -213,18 +217,42 @@ def _copied_value_is_unchanged(before: Any, after: Any) -> bool | None:
         return False
     if isinstance(before, float) and math.isnan(before) and math.isnan(after):
         return True
+    if seen_pairs is None:
+        seen_pairs = set()
     if isinstance(before, dict):
         if before.keys() != after.keys():
             return False
+        pair = (id(before), id(after))
+        if pair in seen_pairs:
+            return True
+        seen_pairs.add(pair)
         comparisons = (
-            _copied_value_is_unchanged(before[key], after[key]) for key in before
+            _copied_value_is_unchanged(before[key], after[key], seen_pairs)
+            for key in before
         )
     elif isinstance(before, (list, tuple)):
         if len(before) != len(after):
             return False
+        pair = (id(before), id(after))
+        if pair in seen_pairs:
+            return True
+        seen_pairs.add(pair)
         comparisons = (
-            _copied_value_is_unchanged(left, right)
+            _copied_value_is_unchanged(left, right, seen_pairs)
             for left, right in zip(before, after)
+        )
+    elif is_dataclass(before) and not isinstance(before, type):
+        pair = (id(before), id(after))
+        if pair in seen_pairs:
+            return True
+        seen_pairs.add(pair)
+        comparisons = (
+            _copied_value_is_unchanged(
+                getattr(before, member.name),
+                getattr(after, member.name),
+                seen_pairs,
+            )
+            for member in fields(before)
         )
     else:
         try:
